@@ -1,0 +1,22 @@
+# Cache
+api/cache/*.json
+
+# Logs
+*.log
+
+# Database
+*.db
+*.sqlite
+
+# Secrets
+*.pem
+*.key
+*.crt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
