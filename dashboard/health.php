@@ -13,6 +13,10 @@ require_login();
     <link rel="stylesheet" href="dist/css/adminlte.min.css">
     <!-- Font Awesome -->
     <link rel="stylesheet" href="plugins/fontawesome-free/css/all.min.css">
+    <!-- Toastr -->
+    <link rel="stylesheet" href="plugins/toastr/toastr.min.css">
+    <!-- SweetAlert2 -->
+    <link rel="stylesheet" href="plugins/sweetalert2-theme-bootstrap-4/bootstrap-4.min.css">
     
     <style>
         .health-ok { color: #28a745; }
@@ -33,6 +37,11 @@ require_login();
             font-size: 1.2rem;
             margin: 5px 0;
         }
+        .lure-actions {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #eee;
+        }
     </style>
 </head>
 <body class="hold-transition sidebar-mini">
@@ -50,6 +59,9 @@ require_login();
                     </div>
                     <div class="col-sm-6">
                         <div class="float-right mt-2">
+                            <a href="cast.php" class="btn btn-success btn-sm mr-2">
+                                <i class="fas fa-plus"></i> Deploy New Lure
+                            </a>
                             <span class="text-muted"><i class="fas fa-clock"></i> Health checks run every 10 minutes</span>
                         </div>
                     </div>
@@ -158,8 +170,74 @@ require_login();
 <script src="plugins/bootstrap/js/bootstrap.bundle.min.js"></script>
 <!-- AdminLTE -->
 <script src="dist/js/adminlte.min.js"></script>
+<!-- Toastr -->
+<script src="plugins/toastr/toastr.min.js"></script>
+<!-- SweetAlert2 -->
+<script src="plugins/sweetalert2/sweetalert2.min.js"></script>
 
 <script>
+// Toastr config
+toastr.options = { positionClass: 'toast-top-right', timeOut: 3000 };
+
+function rebootLure(hostname) {
+    Swal.fire({
+        title: 'Reboot ' + hostname + '?',
+        text: 'The lure will be unavailable for 1-2 minutes.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ffc107',
+        confirmButtonText: 'Yes, reboot it'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            $.post('../api/cast-reboot.php', { hostname: hostname })
+                .done(function(r) {
+                    if (r.success) {
+                        toastr.success(hostname + ' is rebooting');
+                        setTimeout(loadHealthStatus, 2000);
+                    } else {
+                        toastr.error(r.error || 'Reboot failed');
+                    }
+                })
+                .fail(function() {
+                    toastr.error('Request failed');
+                });
+        }
+    });
+}
+
+function terminateLure(hostname) {
+    Swal.fire({
+        title: 'Terminate ' + hostname + '?',
+        html: '<strong class="text-danger">This will permanently destroy the instance!</strong><br>The EIP will be released back to the pool.',
+        icon: 'error',
+        showCancelButton: true,
+        confirmButtonColor: '#dc3545',
+        confirmButtonText: 'Yes, terminate it',
+        input: 'text',
+        inputPlaceholder: 'Type hostname to confirm',
+        inputValidator: (value) => {
+            if (value !== hostname) {
+                return 'Hostname does not match';
+            }
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            $.post('../api/cast-terminate.php', { hostname: hostname })
+                .done(function(r) {
+                    if (r.success) {
+                        toastr.success(hostname + ' terminated');
+                        setTimeout(loadHealthStatus, 2000);
+                    } else {
+                        toastr.error(r.error || 'Terminate failed');
+                    }
+                })
+                .fail(function() {
+                    toastr.error('Request failed');
+                });
+        }
+    });
+}
+
 function loadHealthStatus() {
     fetch('../api/health.php')
         .then(response => response.json())
@@ -254,6 +332,8 @@ function loadHealthStatus() {
                     ? new Date(lure.last_log_received).toLocaleString() 
                     : 'Never';
                 
+                const isTerminated = lure.status === 'terminated';
+                
                 const card = document.createElement('div');
                 card.className = 'col-lg-4 col-md-6';
                 card.innerHTML = `
@@ -277,11 +357,11 @@ function loadHealthStatus() {
                                 <div class="col-6">
                                     <p class="service-status">
                                         <i class="fas fa-hdd ${diskClass}"></i> 
-                                        Disk: <strong class="${diskClass}">${lure.disk_percent}%</strong>
+                                        Disk: <strong class="${diskClass}">${lure.disk_percent || '-'}%</strong>
                                     </p>
                                     <p class="service-status">
                                         <i class="fas fa-memory ${memClass}"></i> 
-                                        Memory: <strong class="${memClass}">${lure.memory_percent}%</strong>
+                                        Memory: <strong class="${memClass}">${lure.memory_percent || '-'}%</strong>
                                     </p>
                                     <p class="service-status">
                                         <i class="fas fa-tachometer-alt ${loadClass}"></i> 
@@ -296,6 +376,17 @@ function loadHealthStatus() {
                                 <i class="fas fa-crosshairs"></i> Last Snare: ${lastLog}
                             </small>
                             ${lure.error_message ? `<br><small class="text-danger"><i class="fas fa-exclamation-circle"></i> ${lure.error_message}</small>` : ''}
+                            
+                            ${!isTerminated ? `
+                            <div class="lure-actions text-right">
+                                <button class="btn btn-warning btn-sm" onclick="rebootLure('${lure.hostname}')" title="Reboot">
+                                    <i class="fas fa-sync"></i> Reboot
+                                </button>
+                                <button class="btn btn-danger btn-sm" onclick="terminateLure('${lure.hostname}')" title="Terminate">
+                                    <i class="fas fa-trash"></i> Terminate
+                                </button>
+                            </div>
+                            ` : ''}
                         </div>
                     </div>
                 `;
