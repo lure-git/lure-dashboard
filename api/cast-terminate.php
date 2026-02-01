@@ -53,19 +53,25 @@ try {
     
     file_put_contents("/tmp/terminate-debug.log", "Instance: $instance_id, EIP: $eip_alloc_id\n", FILE_APPEND);
     
-    // Disassociate EIP if attached
-    if ($eip_alloc_id) {
-        $assoc_cmd = "aws ec2 describe-addresses --region $region --allocation-ids $eip_alloc_id " .
-                     "--query \"Addresses[0].AssociationId\" --output text 2>&1";
-        $assoc_id = trim(shell_exec($assoc_cmd));
-        
-        file_put_contents("/tmp/terminate-debug.log", "AssocID: $assoc_id\n", FILE_APPEND);
-        
-        if ($assoc_id && $assoc_id !== 'None') {
-            $disassoc_output = shell_exec("aws ec2 disassociate-address --region $region --association-id $assoc_id 2>&1");
-            file_put_contents("/tmp/terminate-debug.log", "Disassoc: $disassoc_output\n", FILE_APPEND);
-        }
-        
+       // Get EIP from database and disassociate
+$eip_row = db_fetch_one("SELECT allocation_id FROM cast_eips WHERE assigned_to = :hostname", [':hostname' => $hostname]);
+if ($eip_row && !empty($eip_row['allocation_id'])) {
+    $eip_alloc_id = $eip_row['allocation_id'];
+    
+    file_put_contents("/tmp/terminate-debug.log", "EIP from DB: $eip_alloc_id\n", FILE_APPEND);
+    
+    $assoc_cmd = "aws ec2 describe-addresses --region $region --allocation-ids $eip_alloc_id " .
+                 "--query \"Addresses[0].AssociationId\" --output text 2>&1";
+    $assoc_id = trim(shell_exec($assoc_cmd));
+    
+    file_put_contents("/tmp/terminate-debug.log", "AssocID: $assoc_id\n", FILE_APPEND);
+    
+    if ($assoc_id && $assoc_id !== 'None') {
+        $disassoc_output = shell_exec("aws ec2 disassociate-address --region $region --association-id $assoc_id 2>&1");
+        file_put_contents("/tmp/terminate-debug.log", "Disassoc: $disassoc_output\n", FILE_APPEND);
+    }
+    
+
         db_query("UPDATE cast_eips SET assigned_to = NULL WHERE allocation_id = :alloc",
                  [':alloc' => $eip_alloc_id]);
     }
