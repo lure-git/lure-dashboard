@@ -120,11 +120,11 @@ try {
     $configuring = false;
     
     if (file_exists($post_deploy) && is_executable($post_deploy)) {
-        exec("nohup $post_deploy " . escapeshellarg($mgt_ip) . " " . escapeshellarg($hostname) . 
-             " >> /var/log/lures/post-deploy.log 2>&1 &");
-        $configuring = true;
-    }
-    
+	    exec("nohup sudo -u lure $post_deploy " . escapeshellarg($mgt_ip) . " " . escapeshellarg($hostname) .
+     " >> /var/log/lures/post-deploy.log 2>&1 &");
+    $configuring = true;
+}
+
     echo json_encode([
         'success' => true,
         'instance_id' => $instance_id,
