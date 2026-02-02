@@ -23,3 +23,7 @@ Thumbs.db
 
 api/cache/*
 
+lure/aws
+lure/aws_completer
+bin/aws
+bin/aws_completer
