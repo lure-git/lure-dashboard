@@ -58,12 +58,12 @@ require_login();
                         <h1 class="m-0"><i class="fas fa-heartbeat text-danger"></i> Lure Health Status</h1>
                     </div>
                     <div class="col-sm-6">
-                        <div class="float-right mt-2">
-                            <a href="cast.php" class="btn btn-success btn-sm mr-2">
-                                <i class="fas fa-plus"></i> Deploy New Lure
-                            </a>
-                            <span class="text-muted"><i class="fas fa-clock"></i> Health checks run every 10 minutes</span>
-                        </div>
+			<div class="float-right mt-2">
+    				<button class="btn btn-warning btn-sm mr-2" id="btn-clear-terminated" title="Remove terminated lures from list">
+        			<i class="fas fa-broom"></i> Clear Terminated
+    				</button>
+    				<span class="text-muted"><i class="fas fa-clock"></i> Health checks run every 10 minutes</span>
+			</div>
                     </div>
                 </div>
             </div>
@@ -404,6 +404,31 @@ function loadHealthStatus() {
 loadHealthStatus();
 
 // Auto-refresh every 60 seconds
+// Clear terminated lures
+$('#btn-clear-terminated').click(function() {
+    Swal.fire({
+        title: 'Clear terminated lures?',
+        text: 'This will remove all terminated lures from the list.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, clear them'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            $.post('../api/cast-clear-terminated.php')
+                .done(function(r) {
+                    if (r.success) {
+                        toastr.success('Removed ' + r.count + ' terminated lure(s)');
+                        loadHealthStatus();
+                    } else {
+                        toastr.error(r.error || 'Clear failed');
+                    }
+                })
+                .fail(function() {
+                    toastr.error('Request failed');
+                });
+        }
+    });
+});
 setInterval(loadHealthStatus, 60000);
 </script>
 
