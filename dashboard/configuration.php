@@ -344,7 +344,7 @@ $aws_regions = [
                             <div class="tab-pane fade" id="tab-eips">
                                 <div class="mb-3">
                                     <button class="btn btn-success btn-sm" data-toggle="modal" data-target="#modal-eip">
-                                        <i class="fas fa-plus"></i> Add EIP
+                                        <i class="fas fa-plus"></i> Allocate New EIP
                                     </button>
                                     <button class="btn btn-info btn-sm" id="btn-import-eips">
                                         <i class="fab fa-aws"></i> Import from AWS
@@ -354,7 +354,7 @@ $aws_regions = [
                                     <thead>
                                         <tr><th>EIP</th><th>Allocation ID</th><th>Type</th><th>Status</th><th>Assigned To</th><th>Actions</th></tr>
                                     </thead>
-                                    <tbody>
+                                    <tbody id="eips-table">
                                         <?php foreach ($eips as $e): 
                                             $available = empty($e['assigned_to']);
                                         ?>
@@ -365,7 +365,7 @@ $aws_regions = [
                                             <td><span class="badge badge-<?= $available ? 'success' : 'warning' ?>"><?= $available ? 'Available' : 'In Use' ?></span></td>
                                             <td><?= htmlspecialchars($e['assigned_to'] ?? '-') ?></td>
                                             <td>
-                                                <button class="btn btn-xs btn-warning btn-edit" data-type="eip" data-id="<?= $e['id'] ?>"><i class="fas fa-edit"></i></button>
+                                                <button class="btn btn-xs btn-warning btn-edit-eip" data-type="eip" data-id="<?= $e['id'] ?>"><i class="fas fa-edit"></i></button>
                                                 <button class="btn btn-xs btn-danger btn-delete" data-type="eip" data-id="<?= $e['id'] ?>" <?= !$available ? 'disabled' : '' ?>><i class="fas fa-trash"></i></button>
                                             </td>
                                         </tr>
@@ -486,19 +486,32 @@ $(function() {
         const id = $(this).data('id');
         const row = $(this).closest('tr');
         
+        // Stronger warning for EIPs since they are released from AWS permanently
+        let title = 'Delete?';
+        let text = 'This will remove the resource from configuration.';
+        let icon = 'warning';
+        
+        if (type === 'eip') {
+            const eip = row.find('td:first code').text();
+            title = 'Release EIP from AWS?';
+            text = 'This will PERMANENTLY release ' + eip + ' from your AWS account. This action cannot be undone - you will not be able to get this IP address back.';
+            icon = 'error';
+        }
+        
         Swal.fire({
-            title: 'Delete?',
-            text: 'This will remove the resource from configuration.',
-            icon: 'warning',
+            title: title,
+            text: text,
+            icon: icon,
             showCancelButton: true,
-            confirmButtonColor: '#d33'
+            confirmButtonColor: '#d33',
+            confirmButtonText: type === 'eip' ? 'Yes, Release EIP' : 'Yes, Delete'
         }).then((result) => {
             if (result.isConfirmed) {
                 $.post('../api/cast-config.php', { action: 'delete', type: type, id: id })
                     .done(function(r) {
                         if (r.success) {
                             row.fadeOut(function() { $(this).remove(); });
-                            toastr.success('Deleted');
+                            toastr.success(type === 'eip' ? 'EIP released from AWS' : 'Deleted');
                         } else {
                             toastr.error(r.error || 'Delete failed');
                         }
@@ -507,7 +520,7 @@ $(function() {
         });
     });
     
-    // Edit resource
+    // Edit resource (non-EIP)
     $('.btn-edit').click(function() {
         const type = $(this).data('type');
         const id = $(this).data('id');
@@ -522,8 +535,27 @@ $(function() {
             });
     });
     
+    // Edit EIP - uses separate modal since Add EIP is now auto-allocate
+    $('.btn-edit-eip').click(function() {
+        const id = $(this).data('id');
+        
+        $.get('../api/cast-config.php', { action: 'get', type: 'eip', id: id })
+            .done(function(r) {
+                if (r.success) {
+                    const modal = $('#modal-eip-edit');
+                    modal.find('[name="id"]').val(r.data.id);
+                    modal.find('[name="eip"]').val(r.data.eip);
+                    modal.find('[name="allocation_id"]').val(r.data.allocation_id);
+                    modal.find('[name="eip_type"]').val(r.data.eip_type);
+                    modal.modal('show');
+                } else {
+                    toastr.error(r.error || 'Failed to load');
+                }
+            });
+    });
+    
     function openEditModal(type, data) {
-        const modalMap = { subnet: '#modal-subnet', sg: '#modal-sg', eip: '#modal-eip' };
+        const modalMap = { subnet: '#modal-subnet', sg: '#modal-sg' };
         const modal = $(modalMap[type]);
         if (!modal.length) return;
         
@@ -559,6 +591,108 @@ $(function() {
             .done(function(r) {
                 if (r.success) toastr.success('Default updated');
             });
+    });
+    
+    // =========================================
+    // EIP ALLOCATION - NEW AUTO-ALLOCATE LOGIC
+    // =========================================
+    
+    // Reset EIP modal state when opened
+    $('#modal-eip').on('show.bs.modal', function() {
+        resetEipModal();
+    });
+    
+    function resetEipModal() {
+        $('#eip-allocate-info').show();
+        $('#eip-allocate-progress').hide();
+        $('#eip-allocate-result').hide();
+        $('#eip-success').hide();
+        $('#eip-error').hide();
+        $('#eip-allocate-btn').show().prop('disabled', false);
+        $('#eip-cancel-btn').show();
+        $('#eip-done-btn').hide();
+    }
+    
+    // Allocate EIP button click
+    $('#eip-allocate-btn').click(function() {
+        const btn = $(this);
+        
+        // Show progress
+        $('#eip-allocate-info').hide();
+        $('#eip-allocate-progress').show();
+        btn.prop('disabled', true);
+        $('#eip-cancel-btn').hide();
+        
+        // Call the allocation API
+        $.ajax({
+            url: '../api/cast-allocate-eip.php',
+            method: 'POST',
+            dataType: 'json',
+            timeout: 30000 // 30 second timeout
+        })
+        .done(function(response) {
+            $('#eip-allocate-progress').hide();
+            $('#eip-allocate-result').show();
+            
+            if (response.success) {
+                // Show success
+                $('#eip-success').show();
+                $('#eip-success-details').html(
+                    'Allocated: <code>' + response.eip + '</code><br>' +
+                    'Allocation ID: <code>' + response.allocation_id + '</code>'
+                );
+                
+                // Add the new row to the table
+                const newRow = `
+                    <tr data-id="new">
+                        <td><code>${response.eip}</code></td>
+                        <td><code>${response.allocation_id}</code></td>
+                        <td><span class="badge badge-primary">bait-pool</span></td>
+                        <td><span class="badge badge-success">Available</span></td>
+                        <td>-</td>
+                        <td>
+                            <button class="btn btn-xs btn-warning btn-edit-eip" data-type="eip" data-id="new"><i class="fas fa-edit"></i></button>
+                            <button class="btn btn-xs btn-danger btn-delete" data-type="eip" data-id="new"><i class="fas fa-trash"></i></button>
+                        </td>
+                    </tr>
+                `;
+                $('#eips-table').prepend(newRow);
+                
+                // Show done button
+                btn.hide();
+                $('#eip-done-btn').show();
+                
+                toastr.success('EIP allocated successfully');
+            } else {
+                // Show error
+                $('#eip-error').show();
+                $('#eip-error-details').text(response.error || 'Unknown error occurred');
+                
+                // Re-enable try again
+                btn.prop('disabled', false).html('<i class="fas fa-redo"></i> Try Again');
+                $('#eip-cancel-btn').show();
+            }
+        })
+        .fail(function(xhr, status, error) {
+            $('#eip-allocate-progress').hide();
+            $('#eip-allocate-result').show();
+            $('#eip-error').show();
+            
+            let errorMsg = 'Request failed';
+            if (status === 'timeout') {
+                errorMsg = 'Request timed out. AWS may be slow to respond.';
+            } else if (xhr.responseJSON && xhr.responseJSON.error) {
+                errorMsg = xhr.responseJSON.error;
+            } else if (error) {
+                errorMsg = error;
+            }
+            
+            $('#eip-error-details').text(errorMsg);
+            
+            // Re-enable try again
+            btn.prop('disabled', false).html('<i class="fas fa-redo"></i> Try Again');
+            $('#eip-cancel-btn').show();
+        });
     });
     
     // Tab persistence

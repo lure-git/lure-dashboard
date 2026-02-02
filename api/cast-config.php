@@ -48,7 +48,7 @@ try {
         // ============================
         case 'test_aws':
             $region = cast_get_config('aws', 'region', 'us-east-2');
-            $cmd = "aws sts get-caller-identity --region $region --output json 2>&1";
+            $cmd = "aws sts get-caller-identity --region " . escapeshellarg($region) . " --output json 2>&1";
             $output = shell_exec($cmd);
             $data = json_decode($output, true);
             
@@ -68,7 +68,7 @@ try {
             $vpc_id = cast_get_config('aws', 'vpc_id', '');
             
             if (!$vpc_id && in_array($type, ['subnets', 'sgs'])) {
-                throw new Exception('VPC ID not configured');
+                throw new Exception('VPC ID not configured. Please set it in the AWS tab first.');
             }
             
             $count = 0;
@@ -76,10 +76,16 @@ try {
             
             switch ($type) {
                 case 'subnets':
-                    $cmd = "aws ec2 describe-subnets --region $region --filters Name=vpc-id,Values=$vpc_id --output json 2>&1";
-                    $data = json_decode(shell_exec($cmd), true);
+                    $cmd = "aws ec2 describe-subnets --region " . escapeshellarg($region) . 
+                           " --filters Name=vpc-id,Values=" . escapeshellarg($vpc_id) . " --output json 2>&1";
+                    $output = shell_exec($cmd);
+                    $data = json_decode($output, true);
                     
-                    foreach ($data['Subnets'] ?? [] as $s) {
+                    if (!isset($data['Subnets'])) {
+                        throw new Exception('AWS error: ' . ($output ?? 'No response'));
+                    }
+                    
+                    foreach ($data['Subnets'] as $s) {
                         $name = '';
                         foreach ($s['Tags'] ?? [] as $t) {
                             if ($t['Key'] === 'Name') { $name = $t['Value']; break; }
@@ -92,18 +98,39 @@ try {
                         elseif (strpos($nl, 'bait') !== false) $stype = 'bait';
                         elseif (strpos($nl, 'em') !== false) $stype = 'em';
                         
-                        $stmt = $db->prepare('INSERT OR IGNORE INTO cast_subnets (subnet_id, name, subnet_type, az, cidr) VALUES (?, ?, ?, ?, ?)');
-                        if ($stmt->execute([$s['SubnetId'], $name, $stype, $s['AvailabilityZone'], $s['CidrBlock']])) {
-                            if ($db->changes() > 0) $count++;
+                        // Check if already exists
+                        $existing = db_fetch_one(
+                            'SELECT id FROM cast_subnets WHERE subnet_id = :subnet_id',
+                            [':subnet_id' => $s['SubnetId']]
+                        );
+                        
+                        if (!$existing) {
+                            db_query(
+                                'INSERT INTO cast_subnets (subnet_id, name, subnet_type, az, cidr) VALUES (:subnet_id, :name, :subnet_type, :az, :cidr)',
+                                [
+                                    ':subnet_id' => $s['SubnetId'],
+                                    ':name' => $name,
+                                    ':subnet_type' => $stype,
+                                    ':az' => $s['AvailabilityZone'],
+                                    ':cidr' => $s['CidrBlock']
+                                ]
+                            );
+                            $count++;
                         }
                     }
                     break;
                     
                 case 'sgs':
-                    $cmd = "aws ec2 describe-security-groups --region $region --filters Name=vpc-id,Values=$vpc_id --output json 2>&1";
-                    $data = json_decode(shell_exec($cmd), true);
+                    $cmd = "aws ec2 describe-security-groups --region " . escapeshellarg($region) . 
+                           " --filters Name=vpc-id,Values=" . escapeshellarg($vpc_id) . " --output json 2>&1";
+                    $output = shell_exec($cmd);
+                    $data = json_decode($output, true);
                     
-                    foreach ($data['SecurityGroups'] ?? [] as $sg) {
+                    if (!isset($data['SecurityGroups'])) {
+                        throw new Exception('AWS error: ' . ($output ?? 'No response'));
+                    }
+                    
+                    foreach ($data['SecurityGroups'] as $sg) {
                         $stype = 'bastion';
                         $nl = strtolower($sg['GroupName']);
                         if (strpos($nl, 'mgt') !== false) $stype = 'lure-mgt';
@@ -111,39 +138,72 @@ try {
                         elseif (strpos($nl, 'em') !== false) $stype = 'em';
                         elseif (strpos($nl, 'proxy') !== false) $stype = 'proxy';
                         
-                        $stmt = $db->prepare('INSERT OR IGNORE INTO cast_security_groups (sg_id, name, sg_type, description) VALUES (?, ?, ?, ?)');
-                        if ($stmt->execute([$sg['GroupId'], $sg['GroupName'], $stype, $sg['Description'] ?? ''])) {
-                            if ($db->changes() > 0) $count++;
+                        // Check if already exists
+                        $existing = db_fetch_one(
+                            'SELECT id FROM cast_security_groups WHERE sg_id = :sg_id',
+                            [':sg_id' => $sg['GroupId']]
+                        );
+                        
+                        if (!$existing) {
+                            db_query(
+                                'INSERT INTO cast_security_groups (sg_id, name, sg_type, description) VALUES (:sg_id, :name, :sg_type, :description)',
+                                [
+                                    ':sg_id' => $sg['GroupId'],
+                                    ':name' => $sg['GroupName'],
+                                    ':sg_type' => $stype,
+                                    ':description' => $sg['Description'] ?? ''
+                                ]
+                            );
+                            $count++;
                         }
                     }
                     break;
                     
                 case 'eips':
-                    $cmd = "aws ec2 describe-addresses --region $region --output json 2>&1";
-                    $data = json_decode(shell_exec($cmd), true);
+                    $cmd = "aws ec2 describe-addresses --region " . escapeshellarg($region) . " --output json 2>&1";
+                    $output = shell_exec($cmd);
+                    $data = json_decode($output, true);
                     
-                    foreach ($data['Addresses'] ?? [] as $e) {
+                    if (!isset($data['Addresses'])) {
+                        throw new Exception('AWS error: ' . ($output ?? 'No response'));
+                    }
+                    
+                    foreach ($data['Addresses'] as $e) {
                         $etype = 'bait-pool';
                         $assigned = '';
                         foreach ($e['Tags'] ?? [] as $t) {
                             if ($t['Key'] === 'Name') {
                                 $assigned = $t['Value'];
                                 $nl = strtolower($t['Value']);
-                                if (strpos($nl, 'bastion') !== false) $etype = 'bastion';
+                                if (strpos($nl, 'bastion') !== false || strpos($nl, 'jump') !== false) $etype = 'bastion';
                                 elseif (strpos($nl, 'proxy') !== false) $etype = 'proxy';
                                 break;
                             }
                         }
                         
-                        $stmt = $db->prepare('INSERT OR IGNORE INTO cast_eips (eip, allocation_id, eip_type, assigned_to) VALUES (?, ?, ?, ?)');
-                        if ($stmt->execute([$e['PublicIp'], $e['AllocationId'] ?? '', $etype, $assigned])) {
-                            if ($db->changes() > 0) $count++;
+                        // Check if already exists
+                        $existing = db_fetch_one(
+                            'SELECT id FROM cast_eips WHERE allocation_id = :allocation_id',
+                            [':allocation_id' => $e['AllocationId'] ?? '']
+                        );
+                        
+                        if (!$existing && !empty($e['PublicIp'])) {
+                            db_query(
+                                'INSERT INTO cast_eips (eip, allocation_id, eip_type, assigned_to) VALUES (:eip, :allocation_id, :eip_type, :assigned_to)',
+                                [
+                                    ':eip' => $e['PublicIp'],
+                                    ':allocation_id' => $e['AllocationId'] ?? '',
+                                    ':eip_type' => $etype,
+                                    ':assigned_to' => $assigned
+                                ]
+                            );
+                            $count++;
                         }
                     }
                     break;
                     
                 default:
-                    throw new Exception('Unknown import type');
+                    throw new Exception('Unknown import type: ' . $type);
             }
             
             echo json_encode(['success' => true, 'count' => $count]);
@@ -183,56 +243,126 @@ try {
         case 'save_resource':
             $type = $_POST['type'] ?? '';
             $id = $_POST['id'] ?? '';
-            $db = get_db();
             
             switch ($type) {
                 case 'subnet':
                     if ($id) {
-                        $stmt = $db->prepare('UPDATE cast_subnets SET subnet_id=?, name=?, subnet_type=?, az=?, cidr=? WHERE id=?');
-                        $stmt->execute([$_POST['subnet_id'], $_POST['name'], $_POST['subnet_type'], $_POST['az'], $_POST['cidr'], $id]);
+                        db_query(
+                            'UPDATE cast_subnets SET subnet_id=:subnet_id, name=:name, subnet_type=:subnet_type, az=:az, cidr=:cidr WHERE id=:id',
+                            [
+                                ':subnet_id' => $_POST['subnet_id'],
+                                ':name' => $_POST['name'],
+                                ':subnet_type' => $_POST['subnet_type'],
+                                ':az' => $_POST['az'],
+                                ':cidr' => $_POST['cidr'],
+                                ':id' => $id
+                            ]
+                        );
                     } else {
-                        $stmt = $db->prepare('INSERT INTO cast_subnets (subnet_id, name, subnet_type, az, cidr) VALUES (?, ?, ?, ?, ?)');
-                        $stmt->execute([$_POST['subnet_id'], $_POST['name'], $_POST['subnet_type'], $_POST['az'], $_POST['cidr']]);
+                        db_query(
+                            'INSERT INTO cast_subnets (subnet_id, name, subnet_type, az, cidr) VALUES (:subnet_id, :name, :subnet_type, :az, :cidr)',
+                            [
+                                ':subnet_id' => $_POST['subnet_id'],
+                                ':name' => $_POST['name'],
+                                ':subnet_type' => $_POST['subnet_type'],
+                                ':az' => $_POST['az'],
+                                ':cidr' => $_POST['cidr']
+                            ]
+                        );
                     }
                     break;
                     
                 case 'pair':
                     if ($id) {
-                        $stmt = $db->prepare('UPDATE cast_subnet_pairs SET name=?, mgt_subnet_id=?, bait_subnet_id=?, az=? WHERE id=?');
-                        $stmt->execute([$_POST['name'], $_POST['mgt_subnet_id'], $_POST['bait_subnet_id'], $_POST['az'], $id]);
+                        db_query(
+                            'UPDATE cast_subnet_pairs SET name=:name, mgt_subnet_id=:mgt_subnet_id, bait_subnet_id=:bait_subnet_id, az=:az WHERE id=:id',
+                            [
+                                ':name' => $_POST['name'],
+                                ':mgt_subnet_id' => $_POST['mgt_subnet_id'],
+                                ':bait_subnet_id' => $_POST['bait_subnet_id'],
+                                ':az' => $_POST['az'],
+                                ':id' => $id
+                            ]
+                        );
                     } else {
-                        $stmt = $db->prepare('INSERT INTO cast_subnet_pairs (name, mgt_subnet_id, bait_subnet_id, az) VALUES (?, ?, ?, ?)');
-                        $stmt->execute([$_POST['name'], $_POST['mgt_subnet_id'], $_POST['bait_subnet_id'], $_POST['az']]);
+                        db_query(
+                            'INSERT INTO cast_subnet_pairs (name, mgt_subnet_id, bait_subnet_id, az) VALUES (:name, :mgt_subnet_id, :bait_subnet_id, :az)',
+                            [
+                                ':name' => $_POST['name'],
+                                ':mgt_subnet_id' => $_POST['mgt_subnet_id'],
+                                ':bait_subnet_id' => $_POST['bait_subnet_id'],
+                                ':az' => $_POST['az']
+                            ]
+                        );
                     }
                     break;
                     
                 case 'sg':
                     if ($id) {
-                        $stmt = $db->prepare('UPDATE cast_security_groups SET sg_id=?, name=?, sg_type=?, description=? WHERE id=?');
-                        $stmt->execute([$_POST['sg_id'], $_POST['name'], $_POST['sg_type'], $_POST['description'], $id]);
+                        db_query(
+                            'UPDATE cast_security_groups SET sg_id=:sg_id, name=:name, sg_type=:sg_type, description=:description WHERE id=:id',
+                            [
+                                ':sg_id' => $_POST['sg_id'],
+                                ':name' => $_POST['name'],
+                                ':sg_type' => $_POST['sg_type'],
+                                ':description' => $_POST['description'],
+                                ':id' => $id
+                            ]
+                        );
                     } else {
-                        $stmt = $db->prepare('INSERT INTO cast_security_groups (sg_id, name, sg_type, description) VALUES (?, ?, ?, ?)');
-                        $stmt->execute([$_POST['sg_id'], $_POST['name'], $_POST['sg_type'], $_POST['description']]);
+                        db_query(
+                            'INSERT INTO cast_security_groups (sg_id, name, sg_type, description) VALUES (:sg_id, :name, :sg_type, :description)',
+                            [
+                                ':sg_id' => $_POST['sg_id'],
+                                ':name' => $_POST['name'],
+                                ':sg_type' => $_POST['sg_type'],
+                                ':description' => $_POST['description']
+                            ]
+                        );
                     }
                     break;
                     
                 case 'eip':
                     if ($id) {
-                        $stmt = $db->prepare('UPDATE cast_eips SET eip=?, allocation_id=?, eip_type=? WHERE id=?');
-                        $stmt->execute([$_POST['eip'], $_POST['allocation_id'], $_POST['eip_type'], $id]);
+                        db_query(
+                            'UPDATE cast_eips SET eip=:eip, allocation_id=:allocation_id, eip_type=:eip_type WHERE id=:id',
+                            [
+                                ':eip' => $_POST['eip'],
+                                ':allocation_id' => $_POST['allocation_id'],
+                                ':eip_type' => $_POST['eip_type'],
+                                ':id' => $id
+                            ]
+                        );
                     } else {
-                        $stmt = $db->prepare('INSERT INTO cast_eips (eip, allocation_id, eip_type) VALUES (?, ?, ?)');
-                        $stmt->execute([$_POST['eip'], $_POST['allocation_id'], $_POST['eip_type']]);
+                        db_query(
+                            'INSERT INTO cast_eips (eip, allocation_id, eip_type) VALUES (:eip, :allocation_id, :eip_type)',
+                            [
+                                ':eip' => $_POST['eip'],
+                                ':allocation_id' => $_POST['allocation_id'],
+                                ':eip_type' => $_POST['eip_type']
+                            ]
+                        );
                     }
                     break;
                     
                 case 'instance_type':
                     if ($id) {
-                        $stmt = $db->prepare('UPDATE cast_instance_types SET instance_type=?, description=? WHERE id=?');
-                        $stmt->execute([$_POST['instance_type'], $_POST['description'], $id]);
+                        db_query(
+                            'UPDATE cast_instance_types SET instance_type=:instance_type, description=:description WHERE id=:id',
+                            [
+                                ':instance_type' => $_POST['instance_type'],
+                                ':description' => $_POST['description'],
+                                ':id' => $id
+                            ]
+                        );
                     } else {
-                        $stmt = $db->prepare('INSERT INTO cast_instance_types (instance_type, description) VALUES (?, ?)');
-                        $stmt->execute([$_POST['instance_type'], $_POST['description']]);
+                        db_query(
+                            'INSERT INTO cast_instance_types (instance_type, description) VALUES (:instance_type, :description)',
+                            [
+                                ':instance_type' => $_POST['instance_type'],
+                                ':description' => $_POST['description']
+                            ]
+                        );
                     }
                     break;
                     
@@ -262,8 +392,43 @@ try {
                 throw new Exception('Invalid type');
             }
             
-            db_query("UPDATE {$tables[$type]} SET is_active = 0 WHERE id = :id", [':id' => $id]);
-            echo json_encode(['success' => true]);
+            // Special handling for EIPs - release from AWS first
+            if ($type === 'eip') {
+                $eip = db_fetch_one('SELECT * FROM cast_eips WHERE id = :id', [':id' => $id]);
+                
+                if (!$eip) {
+                    throw new Exception('EIP not found');
+                }
+                
+                // Check if EIP is assigned to an instance
+                if (!empty($eip['assigned_to'])) {
+                    throw new Exception('Cannot delete EIP - it is currently assigned to ' . $eip['assigned_to'] . '. Unassign it first.');
+                }
+                
+                // Release the EIP from AWS
+                $region = cast_get_config('aws', 'region', 'us-east-2');
+                $allocation_id = $eip['allocation_id'];
+                
+                if (!empty($allocation_id)) {
+                    $cmd = "aws ec2 release-address --allocation-id " . escapeshellarg($allocation_id) . 
+                           " --region " . escapeshellarg($region) . " 2>&1";
+                    $output = shell_exec($cmd);
+                    
+                    // Check for errors (successful release returns empty string)
+                    if (!empty($output) && stripos($output, 'error') !== false) {
+                        throw new Exception('AWS error releasing EIP: ' . $output);
+                    }
+                }
+                
+                // Hard delete from database (not soft delete)
+                db_query("DELETE FROM cast_eips WHERE id = :id", [':id' => $id]);
+                echo json_encode(['success' => true, 'message' => 'EIP released from AWS and removed']);
+                
+            } else {
+                // Soft delete for other resource types
+                db_query("UPDATE {$tables[$type]} SET is_active = 0 WHERE id = :id", [':id' => $id]);
+                echo json_encode(['success' => true]);
+            }
             break;
         
         // ============================
@@ -278,7 +443,7 @@ try {
             break;
         
         default:
-            throw new Exception('Unknown action');
+            throw new Exception('Unknown action: ' . $action);
     }
     
 } catch (Exception $e) {

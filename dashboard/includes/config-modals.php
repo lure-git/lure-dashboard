@@ -148,8 +148,51 @@
     </div>
 </div>
 
-<!-- EIP Modal -->
+<!-- EIP Allocation Modal - UPDATED: Now allocates automatically from AWS -->
 <div class="modal fade" id="modal-eip">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-globe"></i> Allocate New Elastic IP</h5>
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="eip-allocate-info">
+                    <p>This will allocate a new Elastic IP from AWS and add it to the BAIT pool.</p>
+                    <p class="text-muted"><small>The EIP will be tagged with <code>Project: LURE</code> and <code>Name: LURE-Pool</code></small></p>
+                </div>
+                <div id="eip-allocate-progress" style="display: none;">
+                    <div class="text-center">
+                        <i class="fas fa-spinner fa-spin fa-2x text-primary"></i>
+                        <p class="mt-2">Allocating Elastic IP from AWS...</p>
+                    </div>
+                </div>
+                <div id="eip-allocate-result" style="display: none;">
+                    <div id="eip-success" class="alert alert-success" style="display: none;">
+                        <i class="fas fa-check-circle"></i> <strong>Success!</strong><br>
+                        <span id="eip-success-details"></span>
+                    </div>
+                    <div id="eip-error" class="alert alert-danger" style="display: none;">
+                        <i class="fas fa-exclamation-triangle"></i> <strong>Allocation Failed</strong><br>
+                        <span id="eip-error-details"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal" id="eip-cancel-btn">Cancel</button>
+                <button type="button" class="btn btn-success" id="eip-allocate-btn">
+                    <i class="fas fa-plus"></i> Allocate EIP
+                </button>
+                <button type="button" class="btn btn-primary" data-dismiss="modal" id="eip-done-btn" style="display: none;">
+                    Done
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- EIP Edit Modal - For editing existing EIPs only -->
+<div class="modal fade" id="modal-eip-edit">
     <div class="modal-dialog">
         <div class="modal-content">
             <form class="resource-form">
@@ -157,17 +200,17 @@
                 <input type="hidden" name="type" value="eip">
                 <input type="hidden" name="id" value="">
                 <div class="modal-header">
-                    <h5 class="modal-title">Add Elastic IP</h5>
+                    <h5 class="modal-title">Edit Elastic IP</h5>
                     <button type="button" class="close" data-dismiss="modal">&times;</button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
-                        <label>Elastic IP *</label>
-                        <input type="text" class="form-control" name="eip" required placeholder="x.x.x.x">
+                        <label>Elastic IP</label>
+                        <input type="text" class="form-control" name="eip" readonly>
                     </div>
                     <div class="form-group">
-                        <label>Allocation ID *</label>
-                        <input type="text" class="form-control" name="allocation_id" required placeholder="eipalloc-xxxxx">
+                        <label>Allocation ID</label>
+                        <input type="text" class="form-control" name="allocation_id" readonly>
                     </div>
                     <div class="form-group">
                         <label>Type *</label>
