@@ -129,6 +129,9 @@ if (!$bait_sg) $errors[] = 'No lure-bait security group configured';
                                                         <?php endforeach; ?>
                                                     </select>
                                                     <div class="input-group-append">
+                                                        <button type="button" class="btn btn-info" id="btn-sync-eips" title="Sync EIPs with AWS">
+                                                            <i class="fas fa-sync-alt"></i>
+                                                        </button>
                                                         <button type="button" class="btn btn-success" id="btn-allocate-eip" title="Allocate new EIP">
                                                             <i class="fas fa-plus"></i>
                                                         </button>
@@ -213,6 +216,57 @@ $(function() {
         logPre.scrollTop(logPre[0].scrollHeight);
     }
     
+    // Sync EIPs with AWS
+    $('#btn-sync-eips').click(function() {
+        const btn = $(this);
+        btn.prop('disabled', true).html('<i class="fas fa-sync-alt fa-spin"></i>');
+        
+        $.post('../api/cast-sync-eips.php')
+            .done(function(r) {
+                if (r.success) {
+                    // Reload the EIP dropdown with fresh data from DB
+                    $.get('../api/cast-config.php', { action: 'get_available_eips' })
+                        .done(function(eipData) {
+                            if (eipData.success) {
+                                const select = $('#eip_select');
+                                select.find('option:not(:first)').remove();
+                                eipData.eips.forEach(function(e) {
+                                    select.append($('<option>').val(e.allocation_id).text(e.eip));
+                                });
+                                $('#eip-count').text(eipData.eips.length);
+                                
+                                // Update prerequisite warning
+                                if (eipData.eips.length > 0) {
+                                    $('.alert-warning li:contains("No available EIPs")').remove();
+                                    if ($('.alert-warning li').length === 0) {
+                                        $('.alert-warning').remove();
+                                        $('#btn-deploy').prop('disabled', false);
+                                    }
+                                }
+                            }
+                        });
+                    
+                    let msg = 'EIP sync complete: ';
+                    let parts = [];
+                    if (r.added > 0) parts.push(r.added + ' added');
+                    if (r.updated > 0) parts.push(r.updated + ' updated');
+                    if (r.removed > 0) parts.push(r.removed + ' removed');
+                    msg += parts.length > 0 ? parts.join(', ') : 'already in sync';
+                    msg += ' (' + r.available_count + ' available)';
+                    
+                    toastr.success(msg);
+                } else {
+                    toastr.error(r.error || 'Sync failed');
+                }
+            })
+            .fail(function() {
+                toastr.error('Sync request failed');
+            })
+            .always(function() {
+                btn.prop('disabled', false).html('<i class="fas fa-sync-alt"></i>');
+            });
+    });
+    
     // Allocate new EIP
     $('#btn-allocate-eip').click(function() {
         const btn = $(this);
@@ -288,20 +342,24 @@ $(function() {
                         log('Complete! (Manual config may be needed)', 'success');
                     }
                     
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Lure Deployed!',
-                        html: 'Instance: <code>' + r.instance_id + '</code><br>MGT: ' + r.mgt_ip + '<br>BAIT: ' + r.bait_eip,
-                        showCancelButton: true,
-                        confirmButtonText: 'View Health',
-                        cancelButtonText: 'Deploy Another'
-                    }).then((result) => {
-                        if (result.isConfirmed) {
-                            window.location = 'health.php';
-                        } else {
-                            location.reload();
-                        }
-                    });
+                    toastr.success(r.hostname + ' deployed — MGT: ' + r.mgt_ip + ', BAIT: ' + r.bait_eip, 'Lure Deployed');
+                    
+                    // Re-enable deploy button for another deployment
+                    btn.prop('disabled', false).html('<i class="fas fa-rocket"></i> Deploy Lure');
+                    form.find('input, select').prop('disabled', false);
+                    
+                    // Remove the used EIP from dropdown and update count
+                    $('#eip_select option:selected').remove();
+                    $('#eip_select').val('');
+                    var newCount = Math.max(0, parseInt($('#eip-count').text()) - 1);
+                    $('#eip-count').text(newCount);
+                    
+                    // Increment hostname
+                    var currentName = $('#hostname').val();
+                    var match = currentName.match(/^(.*?)(\d+)$/);
+                    if (match) {
+                        $('#hostname').val(match[1] + (parseInt(match[2]) + 1));
+                    }
                 } else {
                     log('Failed: ' + r.error, 'error');
                     toastr.error(r.error || 'Deployment failed');
@@ -319,19 +377,45 @@ $(function() {
     
     function pollStatus(hostname) {
         let attempts = 0;
+        let lastLogLength = 0;
+        
+        function checkLog() {
+            $.get('../api/cast-post-deploy-log.php', { hostname: hostname })
+                .done(function(r) {
+                    if (r.success && r.log && r.log.length > lastLogLength) {
+                        var newContent = r.log.substring(lastLogLength);
+                        lastLogLength = r.log.length;
+                        newContent.split('\n').forEach(function(line) {
+                            if (!line.trim()) return;
+                            var color = '#aaa';
+                            if (line.match(/\b(error|fail|fatal)\b/i)) color = '#f44';
+                            else if (line.match(/\b(ok|success|done|complete|✓)\b/i)) color = '#4f4';
+                            else if (line.match(/\b(skip|warn|waiting)\b/i)) color = '#fa0';
+                            logPre.append('<span style="color:' + color + '">' + $('<span>').text(line).html() + '</span>\n');
+                        });
+                        logPre.scrollTop(logPre[0].scrollHeight);
+                    }
+                });
+        }
+        
+        // Check immediately, then every 5 seconds
+        checkLog();
+        
         const poll = setInterval(function() {
             attempts++;
+            checkLog();
+            
             $.get('../api/cast-status.php', { hostname: hostname })
                 .done(function(r) {
                     if (r.status === 'active') {
                         log('Configuration complete!', 'success');
                         clearInterval(poll);
-                    } else if (attempts > 30) {
+                    } else if (attempts > 60) {
                         log('Config taking longer than expected, check health page', 'info');
                         clearInterval(poll);
                     }
                 });
-        }, 10000);
+        }, 5000);
     }
 });
 </script>

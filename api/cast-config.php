@@ -16,6 +16,14 @@ try {
     switch ($action) {
         
         // ============================
+        // Get available EIPs (for AJAX refresh)
+        // ============================
+        case 'get_available_eips':
+            $eips = cast_get_eips('bait-pool', true);
+            echo json_encode(['success' => true, 'eips' => $eips]);
+            break;
+        
+        // ============================
         // Save config category
         // ============================
         case 'save':
@@ -160,6 +168,7 @@ try {
                     break;
                     
                 case 'eips':
+                    // Full sync with AWS (adds missing, removes stale, updates assignments and types)
                     $cmd = "aws ec2 describe-addresses --region " . escapeshellarg($region) . " --output json 2>&1";
                     $output = shell_exec($cmd);
                     $data = json_decode($output, true);
@@ -168,12 +177,15 @@ try {
                         throw new Exception('AWS error: ' . ($output ?? 'No response'));
                     }
                     
+                    // Build AWS EIP map
+                    $aws_eips = [];
                     foreach ($data['Addresses'] as $e) {
+                        $alloc_id = $e['AllocationId'] ?? '';
+                        if (empty($alloc_id)) continue;
+                        
                         $etype = 'bait-pool';
-                        $assigned = '';
                         foreach ($e['Tags'] ?? [] as $t) {
                             if ($t['Key'] === 'Name') {
-                                $assigned = $t['Value'];
                                 $nl = strtolower($t['Value']);
                                 if (strpos($nl, 'bastion') !== false || strpos($nl, 'jump') !== false) $etype = 'bastion';
                                 elseif (strpos($nl, 'proxy') !== false) $etype = 'proxy';
@@ -181,25 +193,86 @@ try {
                             }
                         }
                         
-                        // Check if already exists
-                        $existing = db_fetch_one(
-                            'SELECT id FROM cast_eips WHERE allocation_id = :allocation_id',
-                            [':allocation_id' => $e['AllocationId'] ?? '']
-                        );
+                        // Check associated instance for type detection and assignment
+                        $assigned = null;
+                        $instance_id = $e['InstanceId'] ?? null;
                         
-                        if (!$existing && !empty($e['PublicIp'])) {
+                        // If no direct InstanceId, check via NetworkInterfaceId
+                        if (empty($instance_id) && !empty($e['NetworkInterfaceId'])) {
+                            $eni_cmd = "aws ec2 describe-network-interfaces --region " . escapeshellarg($region) .
+                                       " --network-interface-ids " . escapeshellarg($e['NetworkInterfaceId']) .
+                                       " --query \"NetworkInterfaces[0].Attachment.InstanceId\" --output text 2>&1";
+                            $eni_instance = trim(shell_exec($eni_cmd));
+                            if (!empty($eni_instance) && $eni_instance !== 'None') {
+                                $instance_id = $eni_instance;
+                            }
+                        }
+                        
+                        if (!empty($instance_id)) {
+                            $inst_cmd = "aws ec2 describe-instances --region " . escapeshellarg($region) .
+                                        " --instance-ids " . escapeshellarg($instance_id) .
+                                        " --query \"Reservations[0].Instances[0].Tags[?Key=='Name'].Value|[0]\" --output text 2>&1";
+                            $inst_name = trim(shell_exec($inst_cmd));
+                            if (!empty($inst_name) && $inst_name !== 'None') {
+                                $assigned = $inst_name;
+                                if ($etype === 'bait-pool') {
+                                    $inl = strtolower($inst_name);
+                                    if (strpos($inl, 'bastion') !== false || strpos($inl, 'jump') !== false) $etype = 'bastion';
+                                    elseif (strpos($inl, 'proxy') !== false) $etype = 'proxy';
+                                    elseif (strpos($inl, 'em') !== false) $etype = 'em';
+                                }
+                            }
+                        }
+                        
+                        $aws_eips[$alloc_id] = [
+                            'eip' => $e['PublicIp'],
+                            'allocation_id' => $alloc_id,
+                            'eip_type' => $etype,
+                            'assigned_to' => $assigned
+                        ];
+                    }
+                    
+                    // Get current DB state
+                    $db_rows = db_fetch_all('SELECT * FROM cast_eips WHERE is_active = 1');
+                    $db_eips = [];
+                    foreach ($db_rows as $row) {
+                        $db_eips[$row['allocation_id']] = $row;
+                    }
+                    
+                    $added = 0;
+                    $updated = 0;
+                    $removed = 0;
+                    
+                    // Add/update from AWS
+                    foreach ($aws_eips as $alloc_id => $aws) {
+                        if (isset($db_eips[$alloc_id])) {
+                            $db_rec = $db_eips[$alloc_id];
+                            $db_assigned = $db_rec['assigned_to'] ?: null;
+                            if ($db_assigned !== $aws['assigned_to'] || $db_rec['eip_type'] !== $aws['eip_type']) {
+                                db_query(
+                                    'UPDATE cast_eips SET assigned_to = :assigned, eip_type = :type WHERE allocation_id = :alloc',
+                                    [':assigned' => $aws['assigned_to'], ':type' => $aws['eip_type'], ':alloc' => $alloc_id]
+                                );
+                                $updated++;
+                            }
+                        } else {
                             db_query(
-                                'INSERT INTO cast_eips (eip, allocation_id, eip_type, assigned_to) VALUES (:eip, :allocation_id, :eip_type, :assigned_to)',
-                                [
-                                    ':eip' => $e['PublicIp'],
-                                    ':allocation_id' => $e['AllocationId'] ?? '',
-                                    ':eip_type' => $etype,
-                                    ':assigned_to' => $assigned
-                                ]
+                                'INSERT INTO cast_eips (eip, allocation_id, eip_type, assigned_to) VALUES (:eip, :alloc, :type, :assigned)',
+                                [':eip' => $aws['eip'], ':alloc' => $alloc_id, ':type' => $aws['eip_type'], ':assigned' => $aws['assigned_to']]
                             );
-                            $count++;
+                            $added++;
                         }
                     }
+                    
+                    // Remove stale DB entries
+                    foreach ($db_eips as $alloc_id => $db_rec) {
+                        if (!isset($aws_eips[$alloc_id])) {
+                            db_query('DELETE FROM cast_eips WHERE allocation_id = :alloc', [':alloc' => $alloc_id]);
+                            $removed++;
+                        }
+                    }
+                    
+                    $count = $added + $updated + $removed;
                     break;
                     
                 default:
@@ -441,6 +514,9 @@ try {
             db_query('UPDATE cast_instance_types SET is_default = 1 WHERE id = :id', [':id' => $id]);
             echo json_encode(['success' => true]);
             break;
+        
+        case '':
+            throw new Exception('No action specified');
         
         default:
             throw new Exception('Unknown action: ' . $action);
