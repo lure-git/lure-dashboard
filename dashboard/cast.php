@@ -141,6 +141,22 @@ if (!$bait_sg) $errors[] = 'No lure-bait security group configured';
                                             </div>
                                         </div>
                                     </div>
+                                    
+                                    <!-- Hardening Mode -->
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="form-group">
+                                                <label>Hardening Mode</label>
+                                                <select class="form-control" name="hardening_mode" id="hardening_mode">
+                                                    <option value="full" selected>Production - Fully Locked (no remote access)</option>
+                                                    <option value="keep-ssm">Production + SSM (emergency access via Session Manager)</option>
+                                                    <option value="debug">Debug (SSH and all tools available)</option>
+                                                </select>
+                                                <small class="text-muted" id="hardening-help">No SSH, no SSM, no diagnostic tools. Terminate and redeploy to debug.</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
                                 </div>
                                 <div class="card-footer">
                                     <button type="submit" class="btn btn-primary btn-lg" id="btn-deploy" <?= !empty($errors) ? 'disabled' : '' ?>>
@@ -173,8 +189,25 @@ if (!$bait_sg) $errors[] = 'No lure-bait security group configured';
                                     <li>MGT interface → management SG</li>
                                     <li>BAIT interface → bait SG + EIP</li>
                                     <li>SSH configuration (hostname, rsyslog, nftables)</li>
+                                    <li>Hardening applied (based on mode)</li>
                                     <li>Registered in health monitoring</li>
                                 </ol>
+                                <hr>
+                                <h6>Hardening Modes</h6>
+                                <table class="table table-sm table-borderless small mb-0">
+                                    <tr>
+                                        <td><span class="badge badge-success">Full</span></td>
+                                        <td class="text-muted">No SSH, no SSM, no tools. Maximum security.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge badge-warning">+SSM</span></td>
+                                        <td class="text-muted">No SSH, but SSM Session Manager available.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge badge-danger">Debug</span></td>
+                                        <td class="text-muted">Full access. For troubleshooting only.</td>
+                                    </tr>
+                                </table>
                                 <hr>
                                 <h6>Current Config</h6>
                                 <table class="table table-sm table-borderless small mb-0">
@@ -208,6 +241,17 @@ $(function() {
     
     const logCard = $('#log-card');
     const logPre = $('#deploy-log');
+    
+    // Hardening mode help text
+    const hardeningHelp = {
+        'full': 'No SSH, no SSM, no diagnostic tools. Terminate and redeploy to debug.',
+        'keep-ssm': 'No SSH, but SSM Session Manager available for emergency access.',
+        'debug': '<strong class="text-danger">Warning:</strong> Full access with SSH and all tools. Use for troubleshooting only!'
+    };
+    
+    $('#hardening_mode').on('change', function() {
+        $('#hardening-help').html(hardeningHelp[$(this).val()]);
+    });
     
     function log(msg, type) {
         const ts = new Date().toLocaleTimeString();
@@ -309,10 +353,18 @@ $(function() {
         const form = $(this);
         const btn = $('#btn-deploy');
         const pair = $('#subnet_pair option:selected');
+        const hardeningMode = $('#hardening_mode').val();
         
         if (!pair.val()) {
             toastr.error('Please select a subnet pair');
             return;
+        }
+        
+        // Confirm if deploying in debug mode
+        if (hardeningMode === 'debug') {
+            if (!confirm('You are deploying in DEBUG mode. This lure will have full SSH access and diagnostic tools.\n\nThis should only be used for troubleshooting. Continue?')) {
+                return;
+            }
         }
         
         // IMPORTANT: Serialize BEFORE disabling fields
@@ -327,6 +379,7 @@ $(function() {
         logCard.show();
         logPre.empty();
         log('Starting deployment...', 'info');
+        log('Hardening mode: ' + hardeningMode, 'info');
         
         $.post('../api/cast-deploy.php', data)
             .done(function(r) {

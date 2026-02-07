@@ -23,6 +23,13 @@ $instance_type = trim($_POST['instance_type'] ?? '');
 $eip_alloc_id = trim($_POST['eip_allocation_id'] ?? '');
 $mgt_subnet = trim($_POST['mgt_subnet'] ?? '');
 $bait_subnet = trim($_POST['bait_subnet'] ?? '');
+$hardening_mode = trim($_POST['hardening_mode'] ?? 'full');
+
+// Validate hardening mode
+$valid_modes = ['full', 'keep-ssm', 'debug'];
+if (!in_array($hardening_mode, $valid_modes)) {
+    $hardening_mode = 'full';
+}
 
 if (empty($hostname) || empty($instance_type) || empty($eip_alloc_id) || empty($mgt_subnet) || empty($bait_subnet)) {
     die(json_encode(['success' => false, 'error' => 'Missing required fields']));
@@ -56,12 +63,13 @@ try {
     
     $iam_arg = $iam_role ? "--iam-instance-profile Name=$iam_role" : '';
     
+    // Add hardening mode as EC2 tag for audit/visibility
     $cmd = "aws ec2 run-instances --region $region " .
            "--image-id $ami_id " .
            "--instance-type $instance_type " .
            "--key-name \"$key_name\" " .
            "--network-interfaces '$net_json' " .
-           "--tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=$hostname},{Key=Project,Value=LURE}]' " .
+           "--tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=$hostname},{Key=Project,Value=LURE},{Key=HardeningMode,Value=$hardening_mode}]' " .
            "$iam_arg " .
            "--query 'Instances[0].InstanceId' --output text 2>&1";
     
@@ -109,21 +117,21 @@ try {
     db_query("UPDATE cast_eips SET assigned_to = :hostname WHERE allocation_id = :alloc",
              [':hostname' => $hostname, ':alloc' => $eip_alloc_id]);
     
-    db_query("INSERT INTO lure_health (lure_id, hostname, ip_address, status, last_check, ssh_ok, rsyslog_ok, nftables_ok, disk_percent, memory_percent, uptime, last_log_received, error_message, load) 
-              VALUES (:id, :hostname, :ip, 'provisioning', datetime('now'), 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL)",
-             [':id' => $hostname, ':hostname' => $hostname, ':ip' => $mgt_ip]);
+    db_query("INSERT INTO lure_health (lure_id, hostname, ip_address, status, last_check, ssh_ok, rsyslog_ok, nftables_ok, disk_percent, memory_percent, uptime, last_log_received, error_message, load, hardening_mode) 
+              VALUES (:id, :hostname, :ip, 'provisioning', datetime('now'), 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, :hardening)",
+             [':id' => $hostname, ':hostname' => $hostname, ':ip' => $mgt_ip, ':hardening' => $hardening_mode]);
     
-    audit_log('cast_deploy', 'lure', $hostname, "Deployed $hostname ($instance_id) - MGT: $mgt_ip, BAIT: $bait_eip");
+    audit_log('cast_deploy', 'lure', $hostname, "Deployed $hostname ($instance_id) - MGT: $mgt_ip, BAIT: $bait_eip, Hardening: $hardening_mode");
     
     // Trigger post-deploy config (async)
     $post_deploy = '/usr/local/share/lure/cast/lure-post-deploy.sh';
     $configuring = false;
     
     if (file_exists($post_deploy) && is_executable($post_deploy)) {
-	    exec("nohup sudo -u lure $post_deploy " . escapeshellarg($mgt_ip) . " " . escapeshellarg($hostname) .
-     " >> /var/log/lures/post-deploy.log 2>&1 &");
-    $configuring = true;
-}
+        exec("nohup sudo -u lure $post_deploy " . escapeshellarg($mgt_ip) . " " . escapeshellarg($hostname) . " " . escapeshellarg($hardening_mode) .
+             " >> /var/log/lures/post-deploy.log 2>&1 &");
+        $configuring = true;
+    }
 
     echo json_encode([
         'success' => true,
@@ -131,6 +139,7 @@ try {
         'hostname' => $hostname,
         'mgt_ip' => $mgt_ip,
         'bait_eip' => $bait_eip,
+        'hardening_mode' => $hardening_mode,
         'configuring' => $configuring
     ]);
     
