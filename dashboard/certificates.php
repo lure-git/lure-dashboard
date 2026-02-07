@@ -23,6 +23,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exec('sudo /usr/local/share/lure/cert-mgt/lure-cert issue ' . escapeshellarg($name) . ' 2>&1', $output, $return_code);
             
             if ($return_code === 0) {
+                // Update cert_type to 'api' for manually issued certs
+                db_query("UPDATE certificates SET cert_type = 'api' WHERE common_name = :name AND cert_type IS NULL", [':name' => $name]);
                 audit_log('cert_issue', 'certificate', $name, null);
                 $message = "Certificate '$name' issued successfully";
             } else {
@@ -49,6 +51,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+    
+    if ($action === 'regenerate_lure') {
+        $name = trim($_POST['name'] ?? '');
+        $name = preg_replace('/[^a-zA-Z0-9_-]/', '', $name);
+        
+        if (empty($name)) {
+            $error = 'Lure name is required';
+        } else {
+            // First revoke the old cert
+            exec('sudo /usr/local/share/lure/cert-mgt/lure-cert revoke ' . escapeshellarg($name) . ' 2>&1');
+            
+            // Delete the old cert files
+            exec('sudo rm -f /etc/ssl/lure/clients/' . escapeshellarg($name) . '.crt 2>&1');
+            exec('sudo rm -f /etc/ssl/lure/clients/' . escapeshellarg($name) . '.key 2>&1');
+            
+            // Generate new cert
+            $output = [];
+            $return_code = 0;
+            exec('sudo /usr/local/share/lure/cert-mgt/lure-cert-generate.sh ' . escapeshellarg($name) . ' 2>&1', $output, $return_code);
+            
+            if ($return_code === 0) {
+                audit_log('cert_regenerate', 'lure_certificate', $name, null);
+                $message = "Certificate for lure '$name' regenerated. You must redeploy or manually update the lure's certificates.";
+            } else {
+                $error = "Failed to regenerate certificate: " . implode("\n", $output);
+            }
+        }
+    }
 }
 
 // Handle download
@@ -61,7 +91,7 @@ if (isset($_GET['download'])) {
     $ca_path = "/etc/ssl/lure/ca.crt";
     
     // Check cert exists and is active
-    $cert = db_fetch_one('SELECT is_active FROM certificates WHERE common_name = :name', [':name' => $name]);
+    $cert = db_fetch_one('SELECT is_active, cert_type FROM certificates WHERE common_name = :name', [':name' => $name]);
     
     if (!$cert || !$cert['is_active']) {
         $error = 'Certificate not found or revoked';
@@ -80,18 +110,33 @@ if (isset($_GET['download'])) {
             $zip->addFromString("{$name}.key", $key_content);
             $zip->addFromString("ca.crt", $ca_content);
             
-            // Add readme
-            $readme = "LURE API Client Certificate Bundle\n";
-            $readme .= "===================================\n\n";
-            $readme .= "Client Name: {$name}\n\n";
-            $readme .= "Files:\n";
-            $readme .= "  {$name}.crt - Client certificate\n";
-            $readme .= "  {$name}.key - Client private key (keep secure!)\n";
-            $readme .= "  ca.crt      - CA certificate\n\n";
-            $readme .= "Usage with curl:\n";
-            $readme .= "  curl --cert {$name}.crt --key {$name}.key --cacert ca.crt https://dashboard.lure.network/api/endpoint\n\n";
-            $readme .= "Usage with Python requests:\n";
-            $readme .= "  requests.get(url, cert=('{$name}.crt', '{$name}.key'), verify='ca.crt')\n";
+            // Add readme based on cert type
+            $cert_type = $cert['cert_type'] ?? 'api';
+            if ($cert_type === 'lure') {
+                $readme = "LURE Health Reporting Certificate Bundle\n";
+                $readme .= "=========================================\n\n";
+                $readme .= "Lure: {$name}\n\n";
+                $readme .= "Files:\n";
+                $readme .= "  client.crt - Client certificate (rename from {$name}.crt)\n";
+                $readme .= "  client.key - Client private key (rename from {$name}.key)\n";
+                $readme .= "  ca.crt     - CA certificate\n\n";
+                $readme .= "Installation on lure:\n";
+                $readme .= "  Place files in /usr/local/share/lure/certs/\n";
+                $readme .= "  Rename {$name}.crt to client.crt\n";
+                $readme .= "  Rename {$name}.key to client.key\n";
+            } else {
+                $readme = "LURE API Client Certificate Bundle\n";
+                $readme .= "===================================\n\n";
+                $readme .= "Client Name: {$name}\n\n";
+                $readme .= "Files:\n";
+                $readme .= "  {$name}.crt - Client certificate\n";
+                $readme .= "  {$name}.key - Client private key (keep secure!)\n";
+                $readme .= "  ca.crt      - CA certificate\n\n";
+                $readme .= "Usage with curl:\n";
+                $readme .= "  curl --cert {$name}.crt --key {$name}.key --cacert ca.crt https://dashboard.lure.network/api/endpoint\n\n";
+                $readme .= "Usage with Python requests:\n";
+                $readme .= "  requests.get(url, cert=('{$name}.crt', '{$name}.key'), verify='ca.crt')\n";
+            }
             $zip->addFromString("README.txt", $readme);
             
             $zip->close();
@@ -111,7 +156,19 @@ if (isset($_GET['download'])) {
     }
 }
 
-$certificates = db_fetch_all('SELECT * FROM certificates ORDER BY id DESC');
+// Fetch certificates by type
+$api_certificates = db_fetch_all("SELECT * FROM certificates WHERE (cert_type = 'api' OR cert_type IS NULL) AND common_name NOT LIKE 'Lure-%' ORDER BY id DESC");
+$lure_certificates = db_fetch_all("SELECT c.*, h.status as lure_status, h.last_check as last_health_report 
+                                   FROM certificates c 
+                                   LEFT JOIN lure_health h ON c.common_name = h.hostname 
+                                   WHERE c.cert_type = 'lure' OR c.common_name LIKE 'Lure-%'
+                                   ORDER BY c.id DESC");
+
+// Count stats
+$total_api = count($api_certificates);
+$active_api = count(array_filter($api_certificates, fn($c) => $c['is_active']));
+$total_lure = count($lure_certificates);
+$active_lure = count(array_filter($lure_certificates, fn($c) => $c['is_active']));
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -132,7 +189,7 @@ $certificates = db_fetch_all('SELECT * FROM certificates ORDER BY id DESC');
             <div class="container-fluid">
                 <div class="row mb-2">
                     <div class="col-sm-6">
-                        <h1 class="m-0">API Certificate Management</h1>
+                        <h1 class="m-0"><i class="fas fa-certificate text-warning"></i> Certificate Management</h1>
                     </div>
                 </div>
             </div>
@@ -155,10 +212,58 @@ $certificates = db_fetch_all('SELECT * FROM certificates ORDER BY id DESC');
                 </div>
                 <?php endif; ?>
 
-                <!-- Issue Certificate Card -->
+                <!-- Summary Cards -->
+                <div class="row">
+                    <div class="col-lg-3 col-6">
+                        <div class="small-box bg-info">
+                            <div class="inner">
+                                <h3><?php echo $active_api; ?></h3>
+                                <p>Active API Certs</p>
+                            </div>
+                            <div class="icon"><i class="fas fa-key"></i></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-3 col-6">
+                        <div class="small-box bg-success">
+                            <div class="inner">
+                                <h3><?php echo $active_lure; ?></h3>
+                                <p>Active Lure Certs</p>
+                            </div>
+                            <div class="icon"><i class="fas fa-server"></i></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-3 col-6">
+                        <div class="small-box bg-warning">
+                            <div class="inner">
+                                <?php 
+                                $expiring_soon = 0;
+                                foreach (array_merge($api_certificates, $lure_certificates) as $c) {
+                                    if ($c['is_active'] && strtotime($c['expires_at']) < strtotime('+30 days')) {
+                                        $expiring_soon++;
+                                    }
+                                }
+                                ?>
+                                <h3><?php echo $expiring_soon; ?></h3>
+                                <p>Expiring Soon (&lt;30d)</p>
+                            </div>
+                            <div class="icon"><i class="fas fa-clock"></i></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-3 col-6">
+                        <div class="small-box bg-secondary">
+                            <div class="inner">
+                                <h3><?php echo ($total_api - $active_api) + ($total_lure - $active_lure); ?></h3>
+                                <p>Revoked</p>
+                            </div>
+                            <div class="icon"><i class="fas fa-ban"></i></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Issue API Certificate Card -->
                 <div class="card card-success">
                     <div class="card-header">
-                        <h3 class="card-title"><i class="fas fa-certificate mr-2"></i>Issue New Certificate</h3>
+                        <h3 class="card-title"><i class="fas fa-plus-circle mr-2"></i>Issue New API Certificate</h3>
                         <div class="card-tools">
                             <button type="button" class="btn btn-tool" data-card-widget="collapse"><i class="fas fa-minus"></i></button>
                         </div>
@@ -189,18 +294,23 @@ $certificates = db_fetch_all('SELECT * FROM certificates ORDER BY id DESC');
                     </form>
                 </div>
 
-                <!-- Certificates List -->
+                <!-- API Certificates List -->
                 <div class="card">
                     <div class="card-header">
-                        <h3 class="card-title"><i class="fas fa-list mr-2"></i>Issued Certificates</h3>
+                        <h3 class="card-title"><i class="fas fa-key mr-2"></i>API Client Certificates</h3>
+                        <div class="card-tools">
+                            <span class="badge badge-info"><?php echo $total_api; ?> total</span>
+                        </div>
                     </div>
                     <div class="card-body">
-                        <table id="certsTable" class="table table-bordered table-striped">
+                        <?php if (empty($api_certificates)): ?>
+                        <p class="text-muted text-center">No API certificates issued yet.</p>
+                        <?php else: ?>
+                        <table id="apiCertsTable" class="table table-bordered table-striped table-sm">
                             <thead>
                                 <tr>
-                                    <th>ID</th>
                                     <th>Common Name</th>
-                                    <th>Serial Number</th>
+                                    <th>Serial</th>
                                     <th>Issued</th>
                                     <th>Expires</th>
                                     <th>Status</th>
@@ -208,12 +318,11 @@ $certificates = db_fetch_all('SELECT * FROM certificates ORDER BY id DESC');
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($certificates as $cert): ?>
+                                <?php foreach ($api_certificates as $cert): ?>
                                 <tr>
-                                    <td><?php echo $cert['id']; ?></td>
                                     <td><strong><?php echo htmlspecialchars($cert['common_name']); ?></strong></td>
-                                    <td><code style="font-size: 0.8em;"><?php echo htmlspecialchars(substr($cert['serial_number'] ?? '', 0, 20)); ?>...</code></td>
-                                    <td><?php echo htmlspecialchars($cert['issued_at'] ?? ''); ?></td>
+                                    <td><code style="font-size: 0.75em;"><?php echo htmlspecialchars(substr($cert['serial_number'] ?? '', 0, 16)); ?>...</code></td>
+                                    <td><?php echo date('Y-m-d', strtotime($cert['issued_at'] ?? '')); ?></td>
                                     <td>
                                         <?php 
                                         $expires = $cert['expires_at'] ?? '';
@@ -224,33 +333,29 @@ $certificates = db_fetch_all('SELECT * FROM certificates ORDER BY id DESC');
                                         if ($days_left < 7) $badge_class = 'danger';
                                         if (!$cert['is_active']) $badge_class = 'secondary';
                                         ?>
-                                        <?php echo htmlspecialchars($expires); ?>
+                                        <?php echo date('Y-m-d', strtotime($expires)); ?>
                                         <?php if ($cert['is_active'] && $days_left > 0): ?>
-                                        <br><span class="badge badge-<?php echo $badge_class; ?>"><?php echo $days_left; ?> days left</span>
+                                        <span class="badge badge-<?php echo $badge_class; ?>"><?php echo $days_left; ?>d</span>
                                         <?php endif; ?>
                                     </td>
                                     <td>
                                         <?php if ($cert['is_active']): ?>
-                                        <span class="badge badge-success"><i class="fas fa-check mr-1"></i>Active</span>
+                                        <span class="badge badge-success">Active</span>
                                         <?php else: ?>
-                                        <span class="badge badge-danger"><i class="fas fa-times mr-1"></i>Revoked</span>
-                                        <br><small class="text-muted"><?php echo htmlspecialchars($cert['revoked_at'] ?? ''); ?></small>
+                                        <span class="badge badge-danger">Revoked</span>
                                         <?php endif; ?>
                                     </td>
                                     <td>
                                         <?php if ($cert['is_active']): ?>
-                                        <!-- Download -->
                                         <a href="?download=<?php echo urlencode($cert['common_name']); ?>" 
-                                           class="btn btn-sm btn-primary" title="Download Bundle">
+                                           class="btn btn-xs btn-primary" title="Download Bundle">
                                             <i class="fas fa-download"></i>
                                         </a>
-                                        
-                                        <!-- Revoke -->
                                         <form method="post" style="display:inline;" 
-                                              onsubmit="return confirm('Revoke certificate <?php echo htmlspecialchars($cert['common_name']); ?>? This cannot be undone.');">
+                                              onsubmit="return confirm('Revoke certificate <?php echo htmlspecialchars($cert['common_name']); ?>?');">
                                             <input type="hidden" name="action" value="revoke">
                                             <input type="hidden" name="name" value="<?php echo htmlspecialchars($cert['common_name']); ?>">
-                                            <button type="submit" class="btn btn-sm btn-danger" title="Revoke">
+                                            <button type="submit" class="btn btn-xs btn-danger" title="Revoke">
                                                 <i class="fas fa-ban"></i>
                                             </button>
                                         </form>
@@ -262,6 +367,127 @@ $certificates = db_fetch_all('SELECT * FROM certificates ORDER BY id DESC');
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- Lure Certificates List -->
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <h3 class="card-title"><i class="fas fa-server mr-2"></i>Lure Health Certificates</h3>
+                        <div class="card-tools">
+                            <span class="badge badge-light"><?php echo $total_lure; ?> total</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Lure certificates are automatically generated during Cast deployment. They allow lures to report health status via mTLS.
+                        </p>
+                        <?php if (empty($lure_certificates)): ?>
+                        <p class="text-muted text-center">No lure certificates yet. Deploy a lure via Cast to generate one.</p>
+                        <?php else: ?>
+                        <table id="lureCertsTable" class="table table-bordered table-striped table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Lure</th>
+                                    <th>Lure Status</th>
+                                    <th>Last Health Report</th>
+                                    <th>Cert Expires</th>
+                                    <th>Cert Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($lure_certificates as $cert): ?>
+                                <tr>
+                                    <td>
+                                        <strong><?php echo htmlspecialchars($cert['common_name']); ?></strong>
+                                    </td>
+                                    <td>
+                                        <?php 
+                                        $lure_status = $cert['lure_status'] ?? 'unknown';
+                                        $status_badge = 'secondary';
+                                        if ($lure_status === 'active') $status_badge = 'success';
+                                        if ($lure_status === 'degraded') $status_badge = 'warning';
+                                        if ($lure_status === 'offline' || $lure_status === 'terminated') $status_badge = 'danger';
+                                        ?>
+                                        <span class="badge badge-<?php echo $status_badge; ?>"><?php echo ucfirst($lure_status); ?></span>
+                                    </td>
+                                    <td>
+                                        <?php if ($cert['last_health_report']): ?>
+                                        <?php 
+                                        $last_report = strtotime($cert['last_health_report']);
+                                        $mins_ago = round((time() - $last_report) / 60);
+                                        ?>
+                                        <?php if ($mins_ago < 10): ?>
+                                        <span class="text-success"><?php echo $mins_ago; ?>m ago</span>
+                                        <?php elseif ($mins_ago < 60): ?>
+                                        <span class="text-warning"><?php echo $mins_ago; ?>m ago</span>
+                                        <?php else: ?>
+                                        <span class="text-danger"><?php echo round($mins_ago / 60); ?>h ago</span>
+                                        <?php endif; ?>
+                                        <?php else: ?>
+                                        <span class="text-muted">Never</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php 
+                                        $expires = $cert['expires_at'] ?? '';
+                                        $expires_ts = strtotime($expires);
+                                        $days_left = $expires_ts ? round(($expires_ts - time()) / 86400) : 0;
+                                        $badge_class = 'success';
+                                        if ($days_left < 30) $badge_class = 'warning';
+                                        if ($days_left < 7) $badge_class = 'danger';
+                                        if (!$cert['is_active']) $badge_class = 'secondary';
+                                        ?>
+                                        <?php echo date('Y-m-d', strtotime($expires)); ?>
+                                        <span class="badge badge-<?php echo $badge_class; ?>"><?php echo $days_left; ?>d</span>
+                                    </td>
+                                    <td>
+                                        <?php if ($cert['is_active']): ?>
+                                        <span class="badge badge-success">Active</span>
+                                        <?php else: ?>
+                                        <span class="badge badge-danger">Revoked</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($cert['is_active']): ?>
+                                        <a href="?download=<?php echo urlencode($cert['common_name']); ?>" 
+                                           class="btn btn-xs btn-primary" title="Download Bundle">
+                                            <i class="fas fa-download"></i>
+                                        </a>
+                                        <form method="post" style="display:inline;" 
+                                              onsubmit="return confirm('Regenerate certificate for <?php echo htmlspecialchars($cert['common_name']); ?>? The lure will need to be updated with the new certificate.');">
+                                            <input type="hidden" name="action" value="regenerate_lure">
+                                            <input type="hidden" name="name" value="<?php echo htmlspecialchars($cert['common_name']); ?>">
+                                            <button type="submit" class="btn btn-xs btn-warning" title="Regenerate">
+                                                <i class="fas fa-sync"></i>
+                                            </button>
+                                        </form>
+                                        <form method="post" style="display:inline;" 
+                                              onsubmit="return confirm('Revoke certificate for <?php echo htmlspecialchars($cert['common_name']); ?>? The lure will no longer be able to report health.');">
+                                            <input type="hidden" name="action" value="revoke">
+                                            <input type="hidden" name="name" value="<?php echo htmlspecialchars($cert['common_name']); ?>">
+                                            <button type="submit" class="btn btn-xs btn-danger" title="Revoke">
+                                                <i class="fas fa-ban"></i>
+                                            </button>
+                                        </form>
+                                        <?php else: ?>
+                                        <form method="post" style="display:inline;">
+                                            <input type="hidden" name="action" value="regenerate_lure">
+                                            <input type="hidden" name="name" value="<?php echo htmlspecialchars($cert['common_name']); ?>">
+                                            <button type="submit" class="btn btn-xs btn-success" title="Issue New">
+                                                <i class="fas fa-plus"></i> New
+                                            </button>
+                                        </form>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        <?php endif; ?>
                     </div>
                 </div>
 
@@ -274,6 +500,7 @@ $certificates = db_fetch_all('SELECT * FROM certificates ORDER BY id DESC');
                         </div>
                     </div>
                     <div class="card-body">
+                        <h5>API Client Certificates</h5>
                         <p>After downloading a certificate bundle, clients can authenticate to the API using mTLS:</p>
                         
                         <h6>curl</h6>
@@ -283,8 +510,16 @@ $certificates = db_fetch_all('SELECT * FROM certificates ORDER BY id DESC');
                         <pre><code>import requests
 response = requests.get(url, cert=('client.crt', 'client.key'), verify='ca.crt')</code></pre>
                         
-                        <h6>wget</h6>
-                        <pre><code>wget --certificate=client.crt --private-key=client.key --ca-certificate=ca.crt https://dashboard.lure.network/api/endpoint</code></pre>
+                        <hr>
+                        
+                        <h5>Lure Health Certificates</h5>
+                        <p>Lure certificates are generated automatically during Cast deployment. The certificate files are placed in <code>/usr/local/share/lure/certs/</code> on each lure.</p>
+                        <p>If you need to manually update a lure's certificate:</p>
+                        <ol>
+                            <li>Download the certificate bundle</li>
+                            <li>Copy files to the lure's <code>/usr/local/share/lure/certs/</code> directory</li>
+                            <li>Rename the .crt and .key files to <code>client.crt</code> and <code>client.key</code></li>
+                        </ol>
                     </div>
                 </div>
 
@@ -304,15 +539,26 @@ response = requests.get(url, cert=('client.crt', 'client.key'), verify='ca.crt')
 <script src="dist/js/adminlte.min.js"></script>
 <script>
 $(function() {
-    $('#certsTable').DataTable({
+    $('#apiCertsTable').DataTable({
         "paging": true,
         "lengthChange": false,
         "searching": true,
         "ordering": true,
-        "order": [[0, "desc"]],
-        "info": true,
+        "order": [[2, "desc"]],
+        "info": false,
         "autoWidth": false,
-        "responsive": true
+        "pageLength": 10
+    });
+    
+    $('#lureCertsTable').DataTable({
+        "paging": true,
+        "lengthChange": false,
+        "searching": true,
+        "ordering": true,
+        "order": [[0, "asc"]],
+        "info": false,
+        "autoWidth": false,
+        "pageLength": 10
     });
 });
 </script>
