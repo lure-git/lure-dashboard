@@ -62,7 +62,7 @@ require_login();
     				<button class="btn btn-warning btn-sm mr-2" id="btn-clear-terminated" title="Remove terminated lures from list">
         			<i class="fas fa-broom"></i> Clear Terminated
     				</button>
-    				<span class="text-muted"><i class="fas fa-clock"></i> Health checks run every 10 minutes</span>
+    				<span class="text-muted"><i class="fas fa-clock"></i> Health checks run every 5 minutes</span>
 			</div>
                     </div>
                 </div>
@@ -373,7 +373,8 @@ function loadHealthStatus() {
                             <small class="text-muted">
                                 <i class="fas fa-clock"></i> ${lure.uptime || 'N/A'}<br>
                                 <i class="fas fa-network-wired"></i> ${lure.ip_address}<br>
-                                <i class="fas fa-crosshairs"></i> Last Snare: ${lastLog}
+				<i class="fas fa-crosshairs"></i> Last Snare: ${lastLog}<br>
+                                <i class="fas fa-box"></i> Last Apt: ${lure.last_apt_upgrade || 'Never'}
                             </small>
                             ${lure.error_message ? `<br><small class="text-danger"><i class="fas fa-exclamation-circle"></i> ${lure.error_message}</small>` : ''}
                             

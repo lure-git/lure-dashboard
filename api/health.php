@@ -21,7 +21,8 @@ $stmt = $db->query("
         uptime,
         load,
         last_log_received,
-        error_message
+	error_message,
+	last_apt_upgrade
     FROM lure_health
     ORDER BY lure_id
 ");
