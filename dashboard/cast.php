@@ -149,7 +149,6 @@ if (!$bait_sg) $errors[] = 'No lure-bait security group configured';
                                                 <label>Hardening Mode</label>
                                                 <select class="form-control" name="hardening_mode" id="hardening_mode">
                                                     <option value="full" selected>Production - Fully Locked (no remote access)</option>
-                                                    <option value="keep-ssm">Production + SSM (emergency access via Session Manager)</option>
                                                     <option value="debug">Debug (SSH and all tools available)</option>
                                                 </select>
                                                 <small class="text-muted" id="hardening-help">No SSH, no SSM, no diagnostic tools. Terminate and redeploy to debug.</small>
@@ -200,8 +199,6 @@ if (!$bait_sg) $errors[] = 'No lure-bait security group configured';
                                         <td class="text-muted">No SSH, no SSM, no tools. Maximum security.</td>
                                     </tr>
                                     <tr>
-                                        <td><span class="badge badge-warning">+SSM</span></td>
-                                        <td class="text-muted">No SSH, but SSM Session Manager available.</td>
                                     </tr>
                                     <tr>
                                         <td><span class="badge badge-danger">Debug</span></td>
@@ -245,7 +242,6 @@ $(function() {
     // Hardening mode help text
     const hardeningHelp = {
         'full': 'No SSH, no SSM, no diagnostic tools. Terminate and redeploy to debug.',
-        'keep-ssm': 'No SSH, but SSM Session Manager available for emergency access.',
         'debug': '<strong class="text-danger">Warning:</strong> Full access with SSH and all tools. Use for troubleshooting only!'
     };
     
