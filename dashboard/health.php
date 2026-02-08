@@ -345,6 +345,7 @@ function loadHealthStatus() {
                             </h3>
                             <div class="card-tools">
                                 <span class="badge badge-${statusClass}">${lure.status.toUpperCase()}</span>
+                                ${lure.hardening_mode === "debug" ? '<span class="badge badge-warning ml-1">DEBUG</span>' : ''}
                             </div>
                         </div>
                         <div class="card-body">

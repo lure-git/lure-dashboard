@@ -20,8 +20,9 @@ $stmt = $db->query("
         memory_percent,
         uptime,
         load,
-        last_log_received,
+        (SELECT MAX(syslog_ts) FROM lure_logs WHERE lure_host = lure_health.hostname) as last_log_received,
 	error_message,
+        hardening_mode,
 	last_apt_upgrade
     FROM lure_health
     ORDER BY lure_id
