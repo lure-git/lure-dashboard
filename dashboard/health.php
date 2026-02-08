@@ -351,7 +351,7 @@ function loadHealthStatus() {
                         <div class="card-body">
                             <div class="row">
                                 <div class="col-6">
-                                    <p class="service-status">${checkIcon(lure.ssh_ok)} SSH</p>
+                                    ${lure.hardening_mode === "debug" ? `<p class="service-status">${checkIcon(lure.ssh_ok)} SSH</p>` : ""}
                                     <p class="service-status">${checkIcon(lure.rsyslog_ok)} Rsyslog</p>
                                     <p class="service-status">${checkIcon(lure.nftables_ok)} NFTables</p>
                                 </div>
@@ -375,7 +375,8 @@ function loadHealthStatus() {
                                 <i class="fas fa-clock"></i> ${lure.uptime || 'N/A'}<br>
                                 <i class="fas fa-network-wired"></i> ${lure.ip_address}<br>
 				<i class="fas fa-crosshairs"></i> Last Snare: ${lastLog}<br>
-                                <i class="fas fa-box"></i> Last Apt: ${lure.last_apt_upgrade || 'Never'}
+                                <i class="fas fa-box"></i> Last Apt: ${lure.last_apt_upgrade || 'Never'}<br>
+                                <i class="fas fa-heartbeat"></i> Last Check: ${lure.last_check ? new Date(lure.last_check + 'Z').toLocaleString() : 'Never'}
                             </small>
                             ${lure.error_message ? `<br><small class="text-danger"><i class="fas fa-exclamation-circle"></i> ${lure.error_message}</small>` : ''}
                             
