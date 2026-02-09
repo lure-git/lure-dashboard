@@ -148,14 +148,42 @@ $result = $stmt->execute([
     ':hostname' => $hostname
 ]);
 
-if ($result) {
-    echo json_encode([
-        'success' => true,
-        'message' => 'Health report received',
-        'hostname' => $hostname,
-        'status' => $status
-    ]);
-} else {
+if (!$result) {
     http_response_code(500);
     echo json_encode(['success' => false, 'error' => 'Failed to update database']);
+    exit;
 }
+
+// Build response
+$response = [
+    'success' => true,
+    'message' => 'Health report received',
+    'hostname' => $hostname,
+    'status' => $status
+];
+
+// Check for pending commands for this sensor
+$cmd_stmt = $db->prepare("
+    SELECT id, command, params
+    FROM lure_commands
+    WHERE target_host = :hostname AND dispatched = 0
+    ORDER BY created_at ASC
+    LIMIT 1
+");
+$cmd_stmt->execute([':hostname' => $hostname]);
+$pending = $cmd_stmt->fetch(PDO::FETCH_ASSOC);
+
+if ($pending) {
+    $response['command'] = $pending['command'];
+    $response['params'] = json_decode($pending['params'], true) ?: new \stdClass();
+
+    // Mark as dispatched
+    $upd = $db->prepare("
+        UPDATE lure_commands
+        SET dispatched = 1, dispatched_at = datetime('now')
+        WHERE id = :id
+    ");
+    $upd->execute([':id' => $pending['id']]);
+}
+
+echo json_encode($response);

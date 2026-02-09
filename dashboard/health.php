@@ -178,6 +178,33 @@ require_login();
 <script>
 // Toastr config
 toastr.options = { positionClass: 'toast-top-right', timeOut: 3000 };
+function requestDiagLogs(hostname) {
+    Swal.fire({
+        title: 'Request Diagnostic Logs',
+        html: '<p>Request logs from <strong>' + hostname + '</strong></p>' +
+              '<label>Filter by date (optional):</label>' +
+              '<input type="date" id="diag-since" class="form-control">',
+        icon: 'info',
+        showCancelButton: true,
+        confirmButtonText: 'Request Logs',
+        confirmButtonColor: '#17a2b8'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            const since = document.getElementById('diag-since').value || '';
+            $.post('../api/request-diag-logs.php', { hostname: hostname, since: since })
+                .done(function(r) {
+                    if (r.success) {
+                        toastr.success(r.message);
+                    } else {
+                        toastr.error(r.error || 'Request failed');
+                    }
+                })
+                .fail(function() {
+                    toastr.error('Request failed');
+                });
+        }
+    });
+}
 
 function rebootLure(hostname) {
     Swal.fire({
@@ -382,6 +409,7 @@ function loadHealthStatus() {
                             
                             ${!isTerminated ? `
                             <div class="lure-actions text-right">
+			    <button class="btn btn-info btn-sm" onclick="requestDiagLogs('${lure.hostname}')" title="Request Diagnostic Logs"><i class="fas fa-file-medical-alt"></i> Diagnostics</button>
                                 <button class="btn btn-warning btn-sm" onclick="rebootLure('${lure.hostname}')" title="Reboot">
                                     <i class="fas fa-sync"></i> Reboot
                                 </button>
