@@ -8,6 +8,9 @@ function get_db() {
     if ($db === null) {
         $db = new SQLite3(DB_PATH);
         $db->busyTimeout(5000);
+        $db->exec('PRAGMA journal_mode=WAL');
+        $db->exec('PRAGMA synchronous=NORMAL');
+        $db->exec('PRAGMA cache_size=-16000');
     }
     return $db;
 }
