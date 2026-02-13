@@ -95,6 +95,12 @@ $is_admin = $user && $user['role'] === 'admin';
                         <p>Audit Log</p>
                     </a>
                 </li>
+		<li class="nav-item">
+                    <a href="enrichment.php" class="nav-link <?php echo ($current_page == 'enrichment.php') ? 'active' : ''; ?>">
+                        <i class="nav-icon fas fa-shield-alt"></i>
+                        <p>Enrichment</p>
+                    </a>
+                </li>
                 <?php endif; ?>
             </ul>
         </nav>
