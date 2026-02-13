@@ -13,7 +13,7 @@ require_once 'config.php';
 
 header('Content-Type: application/json');
 
-define('ENRICHMENT_DB', '/usr/local/share/lure/intel-feeds/enrichment.db');
+define('ENRICHMENT_DB', '/var/log/lures/enrichment.db');
 
 function getEnrichmentDB() {
     if (!file_exists(ENRICHMENT_DB)) {
@@ -22,7 +22,7 @@ function getEnrichmentDB() {
         exit;
     }
     try {
-        $db = new PDO('sqlite:' . ENRICHMENT_DB, null, null, [
+	    $db = new PDO('sqlite:file:' . ENRICHMENT_DB . '?mode=ro&immutable=1', null, null, [
             PDO::SQLITE_ATTR_OPEN_FLAGS => PDO::SQLITE_OPEN_READONLY
         ]);
         $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
