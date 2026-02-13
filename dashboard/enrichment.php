@@ -10,6 +10,8 @@ require_login();
     <title>LURE - Enrichment</title>
     <link rel="stylesheet" href="dist/css/adminlte.min.css">
     <link rel="stylesheet" href="plugins/fontawesome-free/css/all.min.css">
+    <link rel="stylesheet" href="plugins/jqvmap/jqvmap.min.css">
+    <link rel="stylesheet" href="plugins/flag-icon-css/css/flag-icon.min.css">
     <style>
         .confidence-bar {
             height: 24px;
@@ -145,6 +147,7 @@ require_login();
                                 <div id="result-score" class="score-big">--</div>
                                 <div id="result-label" class="h4 mt-2">--</div>
                                 <div id="result-ip" class="text-muted font-monospace mt-1" style="font-family:monospace; font-size:1.1em;"></div>
+                                <div id="result-geo" class="mt-1"><small class="text-muted"></small></div>
                                 <hr>
                                 <div class="row text-center">
                                     <div class="col-4">
@@ -214,6 +217,9 @@ require_login();
                                 <h3 class="card-title">Details</h3>
                             </div>
                             <div class="card-body">
+                                <p><strong>GeoIP:</strong> <span id="result-geo-detail">--</span></p>
+                                <p><strong>ASN / Org:</strong> <span id="result-asn">--</span></p>
+                                <hr>
                                 <p><strong>First Seen:</strong> <span id="result-first-seen">--</span></p>
                                 <p><strong>Last Seen:</strong> <span id="result-last-seen">--</span></p>
                                 <p><strong>Feed Sources:</strong></p>
@@ -337,6 +343,7 @@ require_login();
                                         <tr>
                                             <th>IP Address</th>
                                             <th>Confidence</th>
+                                            <th>CC</th>
                                             <th>Feeds</th>
                                             <th>Sensors</th>
                                             <th>Ports</th>
@@ -346,6 +353,43 @@ require_login();
                                         </tr>
                                     </thead>
                                     <tbody id="top-table">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- GeoIP: Map + Top Countries -->
+                <div class="row">
+                    <div class="col-lg-7">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title"><i class="fas fa-globe-americas mr-2"></i>Threat Origins</h3>
+                            </div>
+                            <div class="card-body">
+                                <div id="world-map" style="height: 350px;"></div>
+                            </div>
+                            <div class="card-footer text-center text-muted">
+                                <small><a href="https://db-ip.com" target="_blank">IP Geolocation by DB-IP</a></small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-5">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title"><i class="fas fa-flag mr-2"></i>Top Countries</h3>
+                            </div>
+                            <div class="card-body p-0" style="max-height: 400px; overflow-y: auto;">
+                                <table class="table table-sm table-striped mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Country</th>
+                                            <th class="text-right">IPs</th>
+                                            <th class="text-right">Avg Conf</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="country-table">
                                     </tbody>
                                 </table>
                             </div>
@@ -369,6 +413,8 @@ require_login();
 <script src="plugins/bootstrap/js/bootstrap.bundle.min.js"></script>
 <script src="dist/js/adminlte.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="plugins/jqvmap/jquery.vmap.min.js"></script>
+<script src="plugins/jqvmap/maps/jquery.vmap.world.js"></script>
 
 <script>
 const LABEL_COLORS = {
@@ -445,10 +491,60 @@ function loadSummary() {
                 document.getElementById('last-enriched').textContent = d.toLocaleString();
             }
 
-            // Chart
+            // Charts
             renderDistChart(data.distribution);
+
+            // Country table + map
+            if (data.countries && data.countries.length > 0) {
+                const ctbody = document.getElementById('country-table');
+                ctbody.innerHTML = '';
+                const mapData = {};
+
+                data.countries.forEach(c => {
+                    // Table row
+                    const row = document.createElement('tr');
+                    const cc = (c.geo_country_code || '').toLowerCase();
+                    row.innerHTML = `
+                        <td><span class="flag-icon flag-icon-${cc} mr-1"></span> <strong>${c.geo_country_code}</strong> <small class="text-muted">${c.geo_country}</small></td>
+                        <td class="text-right">${Number(c.count).toLocaleString()}</td>
+                        <td class="text-right">${c.avg_pct}%</td>
+                    `;
+                    ctbody.appendChild(row);
+
+                    // Map data — jqvmap uses lowercase 2-letter codes
+                    if (c.geo_country_code) {
+                        mapData[c.geo_country_code.toLowerCase()] = parseInt(c.count);
+                    }
+                });
+
+                renderWorldMap(mapData);
+            }
         })
         .catch(err => console.error('Error loading summary:', err));
+}
+
+function renderWorldMap(mapData) {
+    $('#world-map').vectorMap({
+        map: 'world_en',
+        backgroundColor: '#fff',
+        borderColor: '#dee2e6',
+        borderOpacity: 0.5,
+        borderWidth: 0.5,
+        color: '#e9ecef',
+        hoverOpacity: 0.7,
+        selectedColor: null,
+        enableZoom: true,
+        showTooltip: true,
+        values: mapData,
+        scaleColors: ['#c6dbef', '#dc3545'],
+        normalizeFunction: 'polynomial',
+        onLabelShow: function(e, el, code) {
+            var count = mapData[code];
+            if (count) {
+                el.html(el.html() + ': ' + Number(count).toLocaleString() + ' IPs');
+            }
+        }
+    });
 }
 
 function renderDistChart(distribution) {
@@ -486,12 +582,15 @@ function loadTop() {
 
             data.forEach(ip => {
                 const color = LABEL_COLORS[ip.confidence_label] || '#6c757d';
+                const cc = (ip.geo_country_code || '').toLowerCase();
+                const ccDisplay = cc ? `<span class="flag-icon flag-icon-${cc} mr-1"></span>${ip.geo_country_code}` : '--';
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td><span class="ip-link" onclick="searchIP('${ip.ip}')">${ip.ip}</span></td>
                     <td>
                         <span class="badge" style="background:${color}; color:#fff;">${ip.confidence_pct}%</span>
                     </td>
+                    <td>${ccDisplay}</td>
                     <td>${ip.feed_count}</td>
                     <td>${ip.sensor_count}</td>
                     <td>${ip.service_count}</td>
@@ -535,6 +634,21 @@ function lookupIP() {
             document.getElementById('result-label').textContent = data.confidence_label;
             document.getElementById('result-label').className = 'h4 mt-2 ' + cssClass;
             document.getElementById('result-ip').textContent = data.ip;
+
+            // GeoIP
+            if (data.geo && data.geo.country) {
+                const gcc = (data.geo.country_code || '').toLowerCase();
+                document.getElementById('result-geo').innerHTML =
+                    '<small><span class="flag-icon flag-icon-' + gcc + ' mr-1"></span>' + (data.geo.country_code || '') + ' — ' + data.geo.country + '</small>';
+                document.getElementById('result-geo-detail').textContent =
+                    (data.geo.country_code || '--') + ' — ' + (data.geo.country || 'Unknown') + ' (' + (data.geo.continent || '--') + ')';
+                document.getElementById('result-asn').textContent =
+                    (data.geo.asn ? 'AS' + data.geo.asn : '--') + ' / ' + (data.geo.org || 'Unknown');
+            } else {
+                document.getElementById('result-geo').innerHTML = '';
+                document.getElementById('result-geo-detail').textContent = 'Unknown';
+                document.getElementById('result-asn').textContent = 'Unknown';
+            }
 
             document.getElementById('result-feeds').textContent = data.feed_count;
             document.getElementById('result-sensors').textContent = data.sensor_count;

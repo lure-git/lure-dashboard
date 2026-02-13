@@ -23,7 +23,6 @@ function getEnrichmentDB() {
     }
     try {
 	    $db = new PDO('sqlite:file:' . ENRICHMENT_DB . '?mode=ro&immutable=1', null, null, [
-            PDO::SQLITE_ATTR_OPEN_FLAGS => PDO::SQLITE_OPEN_READONLY
         ]);
         $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $db->exec('PRAGMA query_only = ON');
@@ -63,6 +62,17 @@ switch ($action) {
             FROM enrichment_results
         ")->fetch(PDO::FETCH_ASSOC);
 
+        // Get top countries
+        $countries = $db->query("
+            SELECT geo_country_code, geo_country, COUNT(*) as count,
+                   ROUND(AVG(confidence_pct), 1) as avg_pct
+            FROM enrichment_results
+            WHERE geo_country_code IS NOT NULL
+            GROUP BY geo_country_code
+            ORDER BY count DESC
+            LIMIT 15
+        ")->fetchAll(PDO::FETCH_ASSOC);
+
         // Get metadata
         $meta = [];
         $stmt = $db->query("SELECT key, value FROM feed_metadata");
@@ -79,6 +89,7 @@ switch ($action) {
         echo json_encode([
             'totals' => $totals,
             'distribution' => $distribution,
+            'countries' => $countries,
             'last_enriched' => $meta['last_enriched'] ?? null,
             'cache_generated' => $meta['cache_generated_at'] ?? null
         ]);
@@ -167,6 +178,13 @@ switch ($action) {
             'novel_threat' => (bool)$result['novel_threat'],
             'first_seen' => $result['first_seen_lure'],
             'last_seen' => $result['last_seen_lure'],
+            'geo' => [
+                'country_code' => $result['geo_country_code'],
+                'country' => $result['geo_country'],
+                'continent' => $result['geo_continent'],
+                'asn' => $result['geo_asn'] ? (int)$result['geo_asn'] : null,
+                'org' => $result['geo_org'],
+            ],
             'breakdown' => $breakdown,
             'total_before_cap' => $total_bonus,
             'capped' => $total_bonus > 99
@@ -191,7 +209,8 @@ switch ($action) {
                    feed_count, sensor_count, service_count,
                    day_count, attack_count, sensors_seen,
                    on_feeds, novel_threat,
-                   first_seen_lure, last_seen_lure
+                   first_seen_lure, last_seen_lure,
+                   geo_country_code, geo_org
             FROM enrichment_results
             $where
             ORDER BY confidence_pct DESC, feed_weight DESC
