@@ -7,35 +7,29 @@ require_login();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LURE Log Dashboard</title>
-    
+    <title>LURE Dashboard</title>
+
     <!-- AdminLTE CSS -->
     <link rel="stylesheet" href="dist/css/adminlte.min.css">
     <!-- Font Awesome -->
     <link rel="stylesheet" href="plugins/fontawesome-free/css/all.min.css">
-    
+
     <style>
         .chart-container {
             position: relative;
             height: 300px;
         }
         .ip-badge {
-            display: inline-block;
-            padding: 5px 10px;
-            border-radius: 3px;
             font-family: monospace;
             font-size: 0.9em;
-            background-color: #e9ecef;
+            color: #343a40;
         }
     </style>
 </head>
 <body class="hold-transition sidebar-mini">
 <div class="wrapper">
-    
-    <!-- Navbar -->
-    <!-- Sidebar -->
 
-	<?php include 'includes/navbar.php'; ?>
+    <?php include 'includes/navbar.php'; ?>
 
     <!-- Content Wrapper -->
     <div class="content-wrapper">
@@ -45,12 +39,6 @@ require_login();
                     <div class="col-sm-6">
                         <h1 class="m-0">Dashboard Overview</h1>
                     </div>
-                    <div class="col-sm-6">
-                        <ol class="breadcrumb float-sm-right">
-                            <li class="breadcrumb-item"><a href="../">Home</a></li>
-                            <li class="breadcrumb-item active">Dashboard</li>
-                        </ol>
-                    </div>
                 </div>
             </div>
         </div>
@@ -58,22 +46,19 @@ require_login();
         <!-- Main content -->
         <section class="content">
             <div class="container-fluid">
-                
+
                 <!-- Stats Cards Row -->
                 <div class="row">
-                    <!-- Total Attacks -->
+                    <!-- Total Snared -->
                     <div class="col-lg-3 col-6">
                         <div class="small-box bg-info">
                             <div class="inner">
                                 <h3 id="total-attacks">0</h3>
-                                <p>Total Snared</p>
+                                <p>Total Snared (30D)</p>
                             </div>
                             <div class="icon">
                                 <i class="fas fa-database"></i>
                             </div>
-                            <a href="#" class="small-box-footer">
-                                More info <i class="fas fa-arrow-circle-right"></i>
-                            </a>
                         </div>
                     </div>
 
@@ -82,18 +67,14 @@ require_login();
                         <div class="small-box bg-success">
                             <div class="inner">
                                 <h3 id="unique-ips">0</h3>
-                                <p>Unique Source IPs</p>
+                                <p>Unique Source IPs (30D)</p>
                             </div>
                             <div class="icon">
-                                <i class="fas fa-network-wired"></i>
+                                <i class="fas fa-fingerprint"></i>
                             </div>
-                            <a href="#" class="small-box-footer">
-                                View details <i class="fas fa-arrow-circle-right"></i>
-                            </a>
                         </div>
                     </div>
 
-                    <!-- Active Lures -->
                     <!-- Active Lures -->
                     <div class="col-lg-3 col-6">
                         <div class="small-box bg-warning">
@@ -102,11 +83,8 @@ require_login();
                                 <p>Active Lures (24h)</p>
                             </div>
                             <div class="icon">
-                                <i class="fas fa-network-wired"></i>
+                                <i class="fas fa-crosshairs"></i>
                             </div>
-                            <a href="#" class="small-box-footer">
-                                Lures reporting <i class="fas fa-arrow-circle-right"></i>
-                            </a>
                         </div>
                     </div>
 
@@ -115,25 +93,30 @@ require_login();
                         <div class="small-box bg-danger">
                             <div class="inner">
                                 <h3 id="attacks-24h">0</h3>
-                                <p>Snared (Last 24h)</p>
+                                <p>Snared (24h)</p>
                             </div>
                             <div class="icon">
                                 <i class="fas fa-chart-line"></i>
                             </div>
-                            <a href="#" class="small-box-footer">
-                                Trend analysis <i class="fas fa-arrow-circle-right"></i>
-                            </a>
                         </div>
                     </div>
                 </div>
 
                 <!-- Charts Row 1 -->
                 <div class="row">
-                    <!-- Attack Timeline -->
+                    <!-- Snare Timeline -->
                     <div class="col-lg-6">
                         <div class="card">
-                            <div class="card-header border-0">
-                                <h3 class="card-title">Snared Timeline (Last 7 Days)</h3>
+                            <div class="card-header">
+                                <h3 class="card-title">Snare Timeline</h3>
+                                <div class="card-tools">
+                                    <select id="timeline-days" class="form-control form-control-sm d-inline-block" style="width:auto;">
+                                        <option value="7" selected>7 Days</option>
+                                        <option value="14">14 Days</option>
+                                        <option value="21">21 Days</option>
+                                        <option value="30">30 Days</option>
+                                    </select>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <div class="chart-container">
@@ -146,8 +129,16 @@ require_login();
                     <!-- Lure Activity -->
                     <div class="col-lg-6">
                         <div class="card">
-                            <div class="card-header border-0">
-                                <h3 class="card-title">Lure Activity (7 Days)</h3>
+                            <div class="card-header">
+                                <h3 class="card-title">Lure Activity</h3>
+                                <div class="card-tools">
+                                    <select id="lure-activity-days" class="form-control form-control-sm d-inline-block" style="width:auto;">
+                                        <option value="7" selected>7 Days</option>
+                                        <option value="14">14 Days</option>
+                                        <option value="21">21 Days</option>
+                                        <option value="30">30 Days</option>
+                                    </select>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <div class="chart-container">
@@ -160,11 +151,19 @@ require_login();
 
                 <!-- Charts Row 2 -->
                 <div class="row">
-                    <!-- Top Attackers -->
+                    <!-- Top Sources -->
                     <div class="col-lg-6">
                         <div class="card">
-                            <div class="card-header border-0">
+                            <div class="card-header">
                                 <h3 class="card-title">Top 10 Source IPs</h3>
+                                <div class="card-tools">
+                                    <select id="top-sources-days" class="form-control form-control-sm d-inline-block" style="width:auto;">
+                                        <option value="7" selected>7 Days</option>
+                                        <option value="14">14 Days</option>
+                                        <option value="21">21 Days</option>
+                                        <option value="30">30 Days</option>
+                                    </select>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <div class="chart-container">
@@ -177,8 +176,16 @@ require_login();
                     <!-- Most Targeted Ports -->
                     <div class="col-lg-6">
                         <div class="card">
-                            <div class="card-header border-0">
+                            <div class="card-header">
                                 <h3 class="card-title">Most Targeted Ports</h3>
+                                <div class="card-tools">
+                                    <select id="ports-days" class="form-control form-control-sm d-inline-block" style="width:auto;">
+                                        <option value="7" selected>7 Days</option>
+                                        <option value="14">14 Days</option>
+                                        <option value="21">21 Days</option>
+                                        <option value="30">30 Days</option>
+                                    </select>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <div class="chart-container">
@@ -245,7 +252,6 @@ require_login();
     </div>
 
     <!-- Footer -->
-    <!-- Footer -->
     <footer class="main-footer">
         <strong>LURE Dashboard &copy; 2026</strong>
         <div class="float-right d-none d-sm-inline-block">
@@ -260,11 +266,11 @@ require_login();
 <script src="plugins/bootstrap/js/bootstrap.bundle.min.js"></script>
 <!-- AdminLTE -->
 <script src="dist/js/adminlte.min.js"></script>
-<!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<!-- Chart.js (local v2.9.4) -->
+<script src="plugins/chart.js/Chart.min.js"></script>
 
 <script>
-let timelineChart, protocolChart, attackersChart, portsChart;
+let timelineChart, lureActivityChart, attackersChart, portsChart;
 
 // Load all dashboard data
 function loadDashboard() {
@@ -275,7 +281,7 @@ function loadDashboard() {
     loadTargetedPorts();
     loadTopSourcesTable();
     loadRecentActivity();
-    
+
     document.getElementById('last-update').textContent = new Date().toLocaleString();
 }
 
@@ -290,7 +296,6 @@ function loadStats() {
         })
         .catch(error => console.error('Error loading stats:', error));
 
-    // Load active lures
     fetch('../api/active-lures.php')
         .then(response => response.json())
         .then(data => {
@@ -301,15 +306,16 @@ function loadStats() {
 
 // Load timeline chart
 function loadTimeline() {
-    fetch('../api/timeline-7days.php')
+    const days = document.getElementById('timeline-days').value;
+    fetch('../api/timeline-7days.php?days=' + days)
         .then(response => response.json())
         .then(data => {
             const ctx = document.getElementById('timelineChart').getContext('2d');
-            
+
             if (timelineChart) {
                 timelineChart.destroy();
             }
-            
+
             timelineChart = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -319,29 +325,27 @@ function loadTimeline() {
                         data: data.tcp,
                         borderColor: 'rgb(75, 192, 192)',
                         backgroundColor: 'rgba(75, 192, 192, 0.1)',
-                        tension: 0.4
+                        lineTension: 0.4
                     }, {
                         label: 'UDP',
                         data: data.udp,
                         borderColor: 'rgb(255, 159, 64)',
                         backgroundColor: 'rgba(255, 159, 64, 0.1)',
-                        tension: 0.4
+                        lineTension: 0.4
                     }, {
                         label: 'ICMP',
                         data: data.icmp,
                         borderColor: 'rgb(153, 102, 255)',
                         backgroundColor: 'rgba(153, 102, 255, 0.1)',
-                        tension: 0.4
+                        lineTension: 0.4
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: {
-                        legend: { position: 'top' }
-                    },
+                    legend: { position: 'top' },
                     scales: {
-                        y: { beginAtZero: true }
+                        yAxes: [{ ticks: { beginAtZero: true } }]
                     }
                 }
             });
@@ -351,13 +355,13 @@ function loadTimeline() {
 
 // Load lure activity chart
 function loadLureActivity() {
-    fetch('../api/lure-activity.php')
+    const days = document.getElementById('lure-activity-days').value;
+    fetch('../api/lure-activity.php?days=' + days)
         .then(response => response.json())
         .then(data => {
             const labels = data.map(l => l.lure_host);
             const values = data.map(l => l.snares);
-            
-            // Generate colors for each lure
+
             const colors = [
                 'rgba(54, 162, 235, 0.8)',
                 'rgba(255, 99, 132, 0.8)',
@@ -370,15 +374,15 @@ function loadLureActivity() {
                 'rgba(255, 140, 0, 0.8)',
                 'rgba(46, 204, 113, 0.8)'
             ];
-            
+
             const ctx = document.getElementById('lureActivityChart').getContext('2d');
-            
-           // if (lureActivityChart) {
-           //     lureActivityChart.destroy();
-           // }
-            
+
+            if (lureActivityChart) {
+                lureActivityChart.destroy();
+            }
+
             lureActivityChart = new Chart(ctx, {
-                type: 'bar',
+                type: 'horizontalBar',
                 data: {
                     labels: labels,
                     datasets: [{
@@ -388,14 +392,11 @@ function loadLureActivity() {
                     }]
                 },
                 options: {
-                    indexAxis: 'y',
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false }
-                    },
+                    legend: { display: false },
                     scales: {
-                        x: { beginAtZero: true }
+                        xAxes: [{ ticks: { beginAtZero: true } }]
                     }
                 }
             });
@@ -403,49 +404,48 @@ function loadLureActivity() {
         .catch(error => console.error('Error loading lure activity:', error));
 }
 
-// Load top attackers chart
+// Load top sources chart
 function loadTopAttackers() {
-    fetch('../api/top-attackers-chart.php')
+    const days = document.getElementById('top-sources-days').value;
+    fetch('../api/top-attackers-chart.php?days=' + days)
         .then(response => response.json())
         .then(data => {
             const labels = data.map(a => a.src_ip);
             const values = data.map(a => a.count);
-            
+
             const ctx = document.getElementById('topAttackersChart').getContext('2d');
-            
+
             if (attackersChart) {
                 attackersChart.destroy();
             }
-            
+
             attackersChart = new Chart(ctx, {
-                type: 'bar',
+                type: 'horizontalBar',
                 data: {
                     labels: labels,
                     datasets: [{
-                        label: 'Snared Count',
+                        label: 'Snares',
                         data: values,
                         backgroundColor: 'rgba(54, 162, 235, 0.8)'
                     }]
                 },
                 options: {
-                    indexAxis: 'y',
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false }
-                    },
+                    legend: { display: false },
                     scales: {
-                        x: { beginAtZero: true }
+                        xAxes: [{ ticks: { beginAtZero: true } }]
                     }
                 }
             });
         })
-        .catch(error => console.error('Error loading top attackers:', error));
+        .catch(error => console.error('Error loading top sources:', error));
 }
 
 // Load targeted ports chart
 function loadTargetedPorts() {
-    fetch('../api/targeted-ports.php')
+    const days = document.getElementById('ports-days').value;
+    fetch('../api/targeted-ports.php?days=' + days)
         .then(response => response.json())
         .then(data => {
             const labels = data.map(p => p.port + (p.service !== 'Other' && p.service !== 'Others' ? ' (' + p.service + ')' : ''));
@@ -460,13 +460,13 @@ function loadTargetedPorts() {
                 'rgb(201, 203, 207)',
                 'rgb(100, 149, 237)'
             ];
-            
+
             const ctx = document.getElementById('portsChart').getContext('2d');
-            
+
             if (portsChart) {
                 portsChart.destroy();
             }
-            
+
             portsChart = new Chart(ctx, {
                 type: 'pie',
                 data: {
@@ -479,14 +479,18 @@ function loadTargetedPorts() {
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: {
-                        legend: { position: 'right' }
-                    }
+                    legend: { position: 'right' }
                 }
             });
         })
         .catch(error => console.error('Error loading ports:', error));
 }
+
+// Dropdown change listeners
+document.getElementById('timeline-days').addEventListener('change', loadTimeline);
+document.getElementById('lure-activity-days').addEventListener('change', loadLureActivity);
+document.getElementById('top-sources-days').addEventListener('change', loadTopAttackers);
+document.getElementById('ports-days').addEventListener('change', loadTargetedPorts);
 
 // Load top sources table
 function loadTopSourcesTable() {
@@ -495,7 +499,7 @@ function loadTopSourcesTable() {
         .then(data => {
             const tbody = document.getElementById('top-sources-table');
             tbody.innerHTML = '';
-            
+
             data.forEach(source => {
                 const row = tbody.insertRow();
                 row.innerHTML = `
@@ -510,20 +514,20 @@ function loadTopSourcesTable() {
 
 // Load recent activity
 function loadRecentActivity() {
-    fetch('../api/recent-activity.php?limit=12')
+    fetch('../api/recent-activity.php?limit=10')
         .then(response => response.json())
         .then(data => {
             const tbody = document.getElementById('recent-activity-table');
             tbody.innerHTML = '';
-            
+
             data.forEach(activity => {
                 const row = tbody.insertRow();
                 const time = new Date(activity.syslog_ts);
                 const timeStr = time.toLocaleTimeString();
-                
+
                 row.innerHTML = `
                     <td><small>${timeStr}</small></td>
-                    <td><code>${activity.src_ip}</code></td>
+                    <td><span class="ip-badge">${activity.src_ip}</span></td>
                     <td><span class="badge badge-info">${activity.port}</span></td>
                     <td><small>${activity.proto}</small></td>
                     <td><span class="badge badge-secondary">${activity.lure_host}</span></td>

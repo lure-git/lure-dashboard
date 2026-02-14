@@ -7,7 +7,7 @@ $db = getDB();
 $stmt = $db->query("
     SELECT COUNT(DISTINCT lure_host) as active_lures
     FROM lure_logs
-    WHERE datetime(syslog_ts) > datetime('now', '-24 hours')
+    WHERE syslog_ts > strftime('%Y-%m-%dT%H:%M:%S', 'now', '-24 hours')
 ");
 
 $result = $stmt->fetch(PDO::FETCH_ASSOC);

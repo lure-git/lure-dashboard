@@ -1,56 +1,45 @@
 <?php
 require_once 'config.php';
-
 $db = getDB();
 
-// Get last 7 days of data grouped by date and protocol
-$stmt = $db->query("
-    SELECT 
-        DATE(syslog_ts) as date,
+$days = isset($_GET['days']) ? (int)$_GET['days'] : 7;
+if (!in_array($days, [7, 14, 21, 30])) {
+    $days = 7;
+}
+
+$stmt = $db->prepare("
+    SELECT
+        substr(syslog_ts, 1, 10) as date,
         proto,
         COUNT(*) as count
     FROM lure_logs
-    WHERE datetime(syslog_ts) > datetime('now', '-7 days')
-    GROUP BY DATE(syslog_ts), proto
+    WHERE syslog_ts > strftime('%Y-%m-%dT%H:%M:%S', 'now', '-' || :days || ' days')
+    GROUP BY substr(syslog_ts, 1, 10), proto
     ORDER BY date ASC, proto
 ");
-
+$stmt->bindValue(':days', $days, PDO::PARAM_INT);
+$stmt->execute();
 $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Organize data by protocol
-$result = [
-    'dates' => [],
-    'tcp' => [],
-    'udp' => [],
-    'icmp' => []
-];
+$result = ['dates' => [], 'tcp' => [], 'udp' => [], 'icmp' => []];
+$by_date = [];
 
-// Get all unique dates
-$dates_query = $db->query("
-    SELECT DISTINCT DATE(syslog_ts) as date
-    FROM lure_logs
-    WHERE datetime(syslog_ts) > datetime('now', '-7 days')
-    ORDER BY date ASC
-");
-$dates = $dates_query->fetchAll(PDO::FETCH_COLUMN);
-
-// Initialize arrays
-foreach ($dates as $date) {
-    $result['dates'][] = $date;
-    $result['tcp'][] = 0;
-    $result['udp'][] = 0;
-    $result['icmp'][] = 0;
+foreach ($data as $row) {
+    $d = $row['date'];
+    if (!isset($by_date[$d])) {
+        $by_date[$d] = ['tcp' => 0, 'udp' => 0, 'icmp' => 0];
+    }
+    $proto = strtolower($row['proto']);
+    if (isset($by_date[$d][$proto])) {
+        $by_date[$d][$proto] = (int)$row['count'];
+    }
 }
 
-// Fill in the data
-foreach ($data as $row) {
-    $date_index = array_search($row['date'], $result['dates']);
-    if ($date_index !== false) {
-        $proto = strtolower($row['proto']);
-        if (isset($result[$proto])) {
-            $result[$proto][$date_index] = (int)$row['count'];
-        }
-    }
+foreach ($by_date as $date => $protos) {
+    $result['dates'][] = $date;
+    $result['tcp'][] = $protos['tcp'];
+    $result['udp'][] = $protos['udp'];
+    $result['icmp'][] = $protos['icmp'];
 }
 
 echo json_encode($result);

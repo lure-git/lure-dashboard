@@ -21,8 +21,9 @@ $stmt = $db->prepare("
             WHEN 8080 THEN 'HTTP-Alt'
             WHEN 445 THEN 'SMB'
             ELSE 'Other'
-        END as service
+       END as service
     FROM lure_logs
+    WHERE src_ip NOT IN (SELECT entry FROM permit_list WHERE entry NOT LIKE '%/%')
     ORDER BY syslog_ts DESC
     LIMIT :limit
 ");

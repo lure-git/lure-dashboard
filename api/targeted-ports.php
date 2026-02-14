@@ -1,9 +1,13 @@
 <?php
 require_once 'config.php';
-
 $db = getDB();
 
-$stmt = $db->query("
+$days = isset($_GET['days']) ? (int)$_GET['days'] : 7;
+if (!in_array($days, [7, 14, 21, 30])) {
+    $days = 7;
+}
+
+$stmt = $db->prepare("
     SELECT 
         dpt as port,
         COUNT(*) as count,
@@ -18,16 +22,17 @@ $stmt = $db->query("
             ELSE 'Other'
         END as service
     FROM lure_logs
+    WHERE syslog_ts > strftime('%Y-%m-%dT%H:%M:%S', 'now', '-' || :days || ' days')
     GROUP BY dpt
     ORDER BY count DESC
 ");
-
+$stmt->bindValue(':days', $days, PDO::PARAM_INT);
+$stmt->execute();
 $all_ports = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Group "Others" together
 $result = [];
 $others_count = 0;
-
 foreach ($all_ports as $port) {
     if ($port['service'] === 'Other') {
         $others_count += $port['count'];
