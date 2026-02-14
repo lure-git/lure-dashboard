@@ -129,6 +129,10 @@ require_login();
         <div class="col-lg-3 col-6"><div class="small-box bg-secondary"><div class="inner"><h3 style="font-size:1.3rem;">2x Daily</h3><p>Update Frequency</p></div><div class="icon"><i class="fas fa-clock"></i></div></div></div>
     </div>
     <div class="row"><div class="col-12"><div class="card">
+        <div class="card-header"><h3 class="card-title"><i class="fas fa-chart-bar mr-2"></i>Feed Value — LURE Matches per Feed</h3><div class="card-tools"><small class="text-muted">How many snared IPs each feed corroborates</small></div></div>
+        <div class="card-body"><div style="position:relative; height:300px;"><canvas id="feedMatchChart"></canvas></div></div>
+    </div></div></div>
+    <div class="row"><div class="col-12"><div class="card">
         <div class="card-header"><h3 class="card-title"><i class="fas fa-rss mr-2"></i>Threat Intelligence Feeds</h3></div>
         <div class="card-body p-0"><table class="table table-striped mb-0"><thead><tr><th>Feed</th><th>Description</th><th>Category</th><th class="text-right">Entries</th><th>Last Changed</th><th>Status</th></tr></thead><tbody id="feeds-table"></tbody></table></div>
         <div class="card-footer text-muted"><small><strong>Last published:</strong> <span id="feed-last-published">--</span> &nbsp;|&nbsp; <strong>Last synced:</strong> <span id="feed-last-synced">--</span> &nbsp;|&nbsp; Feeds are updated at 02:00 and 14:00 UTC, enrichment runs at 04:00 and 16:00 UTC.</small></div>
@@ -338,6 +342,32 @@ function loadFeeds(){
             const row=document.createElement('tr');
             row.innerHTML=`<td><strong>${name}</strong><br><small class="text-muted">${info.type}</small></td><td><small>${info.desc}</small></td><td><span class="badge badge-secondary">${info.category}</span></td><td class="text-right">${Number(f.entry_count||0).toLocaleString()}</td><td><small>${lastChanged}</small></td><td><span class="${statusClass}"><i class="fas ${statusIcon} mr-1"></i>${statusText}</span></td>`;
             tbody.appendChild(row);
+        });
+    });
+    // Load feed matches chart
+    fetch('../api/confidence.php?action=feed_matches').then(r=>r.json()).then(data=>{
+        const matches=data.matches||[];
+        const ctx=document.getElementById('feedMatchChart').getContext('2d');
+        if(window.feedMatchChartInstance) window.feedMatchChartInstance.destroy();
+        window.feedMatchChartInstance=new Chart(ctx,{
+            type:'bar',
+            data:{
+                labels:matches.map(m=>m.feed),
+                datasets:[{
+                    label:'LURE Matches',
+                    data:matches.map(m=>m.match_count),
+                    backgroundColor:'rgba(40,167,69,0.7)',
+                    borderColor:'rgba(40,167,69,1)',
+                    borderWidth:1
+                }]
+            },
+            options:{
+                responsive:true,
+                maintainAspectRatio:false,
+                indexAxis:'y',
+                plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return ctx.parsed.x.toLocaleString()+' IPs (of '+data.total_scored.toLocaleString()+' scored)';}}}},
+                scales:{x:{title:{display:true,text:'Snared IPs Corroborated'},ticks:{callback:function(v){return v.toLocaleString();}}},y:{ticks:{font:{size:11}}}}
+            }
         });
     });
 }

@@ -322,6 +322,37 @@ switch ($action) {
         ]);
         break;
 
+    case 'feed_matches':
+        $db = getEnrichmentDB();
+
+        // Get all feed names from manifest
+        $meta_row = $db->query("SELECT value FROM feed_metadata WHERE key = 'manifest'")->fetch(PDO::FETCH_ASSOC);
+        $manifest = $meta_row ? json_decode($meta_row['value'], true) : [];
+        $feed_names = array_keys($manifest['feeds'] ?? []);
+
+        // Count how many enrichment_results IPs match each feed
+        $matches = [];
+        $total_scored = $db->query("SELECT COUNT(*) as cnt FROM enrichment_results")->fetch(PDO::FETCH_ASSOC);
+
+        foreach ($feed_names as $name) {
+            $stmt = $db->prepare("SELECT COUNT(*) as cnt FROM enrichment_results WHERE feed_sources LIKE :pattern");
+            $stmt->execute([':pattern' => '%"' . $name . '"%']);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            $matches[] = [
+                'feed' => $name,
+                'match_count' => (int)$row['cnt'],
+            ];
+        }
+
+        // Sort by match count descending
+        usort($matches, function($a, $b) { return $b['match_count'] - $a['match_count']; });
+
+        echo json_encode([
+            'total_scored' => (int)$total_scored['cnt'],
+            'matches' => $matches,
+        ]);
+        break;
+
     default:
         http_response_code(400);
         echo json_encode(['error' => 'Unknown action. Use: summary, lookup, top, search']);
