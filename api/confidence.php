@@ -210,10 +210,11 @@ switch ($action) {
                    day_count, attack_count, sensors_seen,
                    on_feeds, novel_threat,
                    first_seen_lure, last_seen_lure,
-                   geo_country_code, geo_org
+                   geo_country_code, geo_org,
+                   (30 + feed_bonus + sensor_bonus + port_bonus + persistence_bonus + volume_bonus) as raw_score
             FROM enrichment_results
             $where
-            ORDER BY confidence_pct DESC, feed_weight DESC
+            ORDER BY raw_score DESC, attack_count DESC
             LIMIT :limit
         ");
         foreach ($params as $k => $v) {
@@ -247,6 +248,78 @@ switch ($action) {
         $stmt->execute([':q' => $q . '%']);
 
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+        break;
+
+    case 'feeds':
+        $db = getEnrichmentDB();
+        $meta = [];
+        $stmt = $db->query("SELECT key, value FROM feed_metadata");
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $meta[$row['key']] = $row['value'];
+        }
+
+        $manifest = isset($meta['manifest']) ? json_decode($meta['manifest'], true) : [];
+        $ip_count = $meta['ip_count'] ?? 0;
+        $cidr_count = $meta['cidr_count'] ?? 0;
+
+        echo json_encode([
+            'feeds' => $manifest['feeds'] ?? [],
+            'ip_count' => (int)$ip_count,
+            'cidr_count' => (int)$cidr_count,
+            'cache_generated' => $meta['cache_generated_at'] ?? null,
+            'last_loaded' => $meta['last_loaded'] ?? null
+        ]);
+        break;
+
+    case 'geo_stats':
+        $db = getEnrichmentDB();
+
+        $total = $db->query("SELECT COUNT(*) as cnt FROM enrichment_results")->fetch(PDO::FETCH_ASSOC);
+        $geo_resolved = $db->query("SELECT COUNT(*) as cnt FROM enrichment_results WHERE geo_country_code IS NOT NULL")->fetch(PDO::FETCH_ASSOC);
+        $country_count = $db->query("SELECT COUNT(DISTINCT geo_country_code) as cnt FROM enrichment_results WHERE geo_country_code IS NOT NULL")->fetch(PDO::FETCH_ASSOC);
+        $continent_dist = $db->query("
+            SELECT geo_continent, COUNT(*) as count
+            FROM enrichment_results
+            WHERE geo_continent IS NOT NULL
+            GROUP BY geo_continent
+            ORDER BY count DESC
+        ")->fetchAll(PDO::FETCH_ASSOC);
+
+        // Top 10 ASNs
+        $top_asns = $db->query("
+            SELECT geo_asn, geo_org, COUNT(*) as count,
+                   ROUND(AVG(confidence_pct), 1) as avg_pct
+            FROM enrichment_results
+            WHERE geo_asn IS NOT NULL
+            GROUP BY geo_asn
+            ORDER BY count DESC
+            LIMIT 15
+        ")->fetchAll(PDO::FETCH_ASSOC);
+
+        // All countries for the map
+        $all_countries = $db->query("
+            SELECT geo_country_code, geo_country, COUNT(*) as count,
+                   ROUND(AVG(confidence_pct), 1) as avg_pct
+            FROM enrichment_results
+            WHERE geo_country_code IS NOT NULL
+            GROUP BY geo_country_code
+            ORDER BY count DESC
+        ")->fetchAll(PDO::FETCH_ASSOC);
+
+        $meta = [];
+        $stmt = $db->query("SELECT key, value FROM feed_metadata WHERE key = 'last_enriched'");
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row) $meta['last_enriched'] = $row['value'];
+
+        echo json_encode([
+            'total_ips' => (int)$total['cnt'],
+            'geo_resolved' => (int)$geo_resolved['cnt'],
+            'country_count' => (int)$country_count['cnt'],
+            'continents' => $continent_dist,
+            'top_asns' => $top_asns,
+            'countries' => $all_countries,
+            'last_enriched' => $meta['last_enriched'] ?? null
+        ]);
         break;
 
     default:
