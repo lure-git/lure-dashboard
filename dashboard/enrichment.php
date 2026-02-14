@@ -234,7 +234,7 @@ const FEED_INFO = {
     'cins_army':{desc:'CINS Army — Collective Intelligence Network bad IPs',category:'Scanning / Attacks',type:'IP'},
     'dshield':{desc:'DShield — SANS top attacking subnets',category:'Scanning',type:'CIDR'},
     'emerging_threats_compromised':{desc:'Emerging Threats — known compromised hosts',category:'Compromised',type:'IP'},
-    'ipsum_level2':{desc:'IPsum — IPs seen on 2+ blocklists (aggregator)',category:'Aggregated Intel',type:'IP'},
+    'ipsum_level1':{desc:'IPsum — IPs seen on 1+ blocklists (broad coverage)',category:'Aggregated Intel',type:'IP'},
     'greensnow':{desc:'GreenSnow — scanning/attacking IPs (last 24h)',category:'Scanning / Attacks',type:'IP'},
     'bruteforceblocker':{desc:'BruteForceBlocker — SSH brute-force IPs',category:'SSH Brute-force',type:'IP'},
     'binarydefense':{desc:'Binary Defense — threat intelligence IP banlist',category:'Threat Intel',type:'IP'}
