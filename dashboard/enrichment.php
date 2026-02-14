@@ -128,6 +128,27 @@ require_login();
         <div class="col-lg-3 col-6"><div class="small-box bg-warning"><div class="inner"><h3 id="feed-stat-cidrs">0</h3><p>Total CIDRs</p></div><div class="icon"><i class="fas fa-network-wired"></i></div></div></div>
         <div class="col-lg-3 col-6"><div class="small-box bg-secondary"><div class="inner"><h3 style="font-size:1.3rem;">2x Daily</h3><p>Update Frequency</p></div><div class="icon"><i class="fas fa-clock"></i></div></div></div>
     </div>
+    <div class="row"><div class="col-12"><div class="card card-outline card-success">
+        <div class="card-header"><h3 class="card-title"><i class="fas fa-shield-alt mr-2"></i>LURE Unique Detection</h3></div>
+        <div class="card-body">
+            <div class="row align-items-center">
+                <div class="col-md-4 text-center">
+                    <h1 class="text-success mb-0" id="lure-novel-pct">--</h1>
+                    <p class="text-muted mb-0">of snares are <strong>ONLY</strong> detected by LURE</p>
+                </div>
+                <div class="col-md-4">
+                    <table class="table table-sm mb-0">
+                        <tr><td><span class="badge badge-success">ONLY LURE detected</span></td><td class="text-right" id="lure-novel-count">--</td><td class="text-right text-muted" id="lure-novel-pct2">--</td></tr>
+                        <tr><td><span class="badge badge-info">Corroborated by feeds</span></td><td class="text-right" id="lure-corroborated-count">--</td><td class="text-right text-muted" id="lure-corroborated-pct">--</td></tr>
+                        <tr class="font-weight-bold"><td>Total Snares</td><td class="text-right" id="lure-total-count">--</td><td class="text-right">100%</td></tr>
+                    </table>
+                </div>
+                <div class="col-md-4">
+                    <p class="mb-0" id="lure-novel-msg" style="font-size:0.9rem;color:#666;"></p>
+                </div>
+            </div>
+        </div>
+    </div></div></div>
     <div class="row"><div class="col-12"><div class="card">
         <div class="card-header"><h3 class="card-title"><i class="fas fa-chart-bar mr-2"></i>Feed Value — LURE Matches per Feed</h3><div class="card-tools"><small class="text-muted">How many snared IPs each feed corroborates</small></div></div>
         <div class="card-body"><div style="position:relative; height:300px;"><canvas id="feedMatchChart"></canvas></div></div>
@@ -218,7 +239,7 @@ require_login();
 <script src="plugins/jquery/jquery.min.js"></script>
 <script src="plugins/bootstrap/js/bootstrap.bundle.min.js"></script>
 <script src="dist/js/adminlte.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="plugins/chart.js/Chart.min.js"></script>
 <script src="plugins/jqvmap/jquery.vmap.min.js"></script>
 <script src="plugins/jqvmap/maps/jquery.vmap.world.js"></script>
 <script>
@@ -234,12 +255,10 @@ const FEED_INFO = {
     'cins_army':{desc:'CINS Army — Collective Intelligence Network bad IPs',category:'Scanning / Attacks',type:'IP'},
     'dshield':{desc:'DShield — SANS top attacking subnets',category:'Scanning',type:'CIDR'},
     'emerging_threats_compromised':{desc:'Emerging Threats — known compromised hosts',category:'Compromised',type:'IP'},
-    'ipsum_level1':{desc:'IPsum — IPs seen on 1+ blocklists (broad coverage)',category:'Aggregated Intel',type:'IP'},
+    'ipsum_level2':{desc:'IPsum — IPs seen on 2+ blocklists (aggregator)',category:'Aggregated Intel',type:'IP'},
     'greensnow':{desc:'GreenSnow — scanning/attacking IPs (last 24h)',category:'Scanning / Attacks',type:'IP'},
     'bruteforceblocker':{desc:'BruteForceBlocker — SSH brute-force IPs',category:'SSH Brute-force',type:'IP'},
-    'binarydefense':{desc:'Binary Defense — threat intelligence IP banlist',category:'Threat Intel',type:'IP'},
-    'dataplane_sshpwauth':{desc:'Dataplane.org — SSH password auth attackers',category:'SSH Brute-force',type:'IP'},
-    'dataplane_sshpwauth:{desc:'Dataplane.org — SSH password auth attackers',category:'SSH Brute-force',type:'IP'},
+    'binarydefense':{desc:'Binary Defense — threat intelligence IP banlist',category:'Threat Intel',type:'IP'}
 };
 let distChart;
 
@@ -326,6 +345,21 @@ function lookupIP(){
 document.getElementById('ip-search').addEventListener('keypress',function(e){if(e.key==='Enter')lookupIP();});
 
 function loadFeeds(){
+    // Populate LURE Unique Detection card
+    fetch('../api/confidence.php?action=summary').then(r=>r.json()).then(data=>{
+        const total=data.totals.total_ips||0;
+        const novel=data.totals.novel_count||0;
+        const corroborated=data.totals.on_feeds||0;
+        const novelPct=total>0?Math.round(novel/total*100):0;
+        const corrPct=total>0?Math.round(corroborated/total*100):0;
+        document.getElementById('lure-novel-pct').textContent=novelPct+'%';
+        document.getElementById('lure-novel-count').textContent=Number(novel).toLocaleString();
+        document.getElementById('lure-novel-pct2').textContent=novelPct+'%';
+        document.getElementById('lure-corroborated-count').textContent=Number(corroborated).toLocaleString();
+        document.getElementById('lure-corroborated-pct').textContent=corrPct+'%';
+        document.getElementById('lure-total-count').textContent=Number(total).toLocaleString();
+        document.getElementById('lure-novel-msg').textContent=novelPct+'% of snares detected by LURE are not found on public threat intelligence feeds. These are snares only your LURE sensors detected.';
+    });
     fetch('../api/confidence.php?action=feeds').then(r=>r.json()).then(data=>{
         const feeds=data.feeds||{};const keys=Object.keys(feeds);
         document.getElementById('feed-stat-count').textContent=keys.length;
@@ -352,7 +386,7 @@ function loadFeeds(){
         const ctx=document.getElementById('feedMatchChart').getContext('2d');
         if(window.feedMatchChartInstance) window.feedMatchChartInstance.destroy();
         window.feedMatchChartInstance=new Chart(ctx,{
-            type:'bar',
+            type:'horizontalBar',
             data:{
                 labels:matches.map(m=>m.feed),
                 datasets:[{
@@ -366,9 +400,9 @@ function loadFeeds(){
             options:{
                 responsive:true,
                 maintainAspectRatio:false,
-                indexAxis:'y',
-                plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return ctx.parsed.x.toLocaleString()+' IPs (of '+data.total_scored.toLocaleString()+' scored)';}}}},
-                scales:{x:{title:{display:true,text:'Snared IPs Corroborated'},ticks:{callback:function(v){return v.toLocaleString();}}},y:{ticks:{font:{size:11}}}}
+                legend:{display:false},
+                tooltips:{callbacks:{label:function(item,chartData){return Number(item.xLabel).toLocaleString()+' IPs (of '+data.total_scored.toLocaleString()+' scored)';}}},
+                scales:{xAxes:[{scaleLabel:{display:true,labelString:'Snared IPs Corroborated'},ticks:{beginAtZero:true,callback:function(v){return v.toLocaleString();}}}],yAxes:[{ticks:{fontSize:11}}]}
             }
         });
     });

@@ -45,18 +45,14 @@ $is_admin = $user && $user['role'] === 'admin';
                         <p>Dashboard</p>
                     </a>
                 </li>
-                <li class="nav-item">
-                    <a href="lists.php" class="nav-link <?php echo ($current_page == 'lists.php') ? 'active' : ''; ?>">
-                        <i class="nav-icon fas fa-list"></i>
-                        <p>Lists</p>
+		<li class="nav-item">
+                    <a href="enrichment.php" class="nav-link <?php echo ($current_page == 'enrichment.php') ? 'active' : ''; ?>">
+                        <i class="nav-icon fas fa-shield-alt"></i>
+                        <p>Enrichment</p>
                     </a>
                 </li>
-                <li class="nav-item">
-                    <a href="health.php" class="nav-link <?php echo ($current_page == 'health.php') ? 'active' : ''; ?>">
-                        <i class="nav-icon fas fa-heartbeat"></i>
-                        <p>Health</p>
-                    </a>
-                </li>
+		<?php if ($is_admin): ?>
+                <li class="nav-header">ADMINISTRATION</li>
                 <li class="nav-item">
                     <a href="cast.php" class="nav-link <?php echo ($current_page == 'cast.php') ? 'active' : ''; ?>">
                         <i class="nav-icon fas fa-project-diagram"></i>
@@ -69,8 +65,18 @@ $is_admin = $user && $user['role'] === 'admin';
                         <p>Configuration</p>
                     </a>
                 </li>
-		<?php if ($is_admin): ?>
-                <li class="nav-header">ADMINISTRATION</li>
+                <li class="nav-item">
+                    <a href="health.php" class="nav-link <?php echo ($current_page == 'health.php') ? 'active' : ''; ?>">
+                        <i class="nav-icon fas fa-heartbeat"></i>
+                        <p>Health</p>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="lists.php" class="nav-link <?php echo ($current_page == 'lists.php') ? 'active' : ''; ?>">
+                        <i class="nav-icon fas fa-list"></i>
+                        <p>Lists</p>
+                    </a>
+                </li>
                 <li class="nav-item">
                     <a href="certificates.php" class="nav-link <?php echo ($current_page == 'certificates.php') ? 'active' : ''; ?>">
                         <i class="nav-icon fas fa-certificate"></i>
@@ -93,12 +99,6 @@ $is_admin = $user && $user['role'] === 'admin';
                     <a href="audit.php" class="nav-link <?php echo ($current_page == 'audit.php') ? 'active' : ''; ?>">
                         <i class="nav-icon fas fa-history"></i>
                         <p>Audit Log</p>
-                    </a>
-                </li>
-		<li class="nav-item">
-                    <a href="enrichment.php" class="nav-link <?php echo ($current_page == 'enrichment.php') ? 'active' : ''; ?>">
-                        <i class="nav-icon fas fa-shield-alt"></i>
-                        <p>Enrichment</p>
                     </a>
                 </li>
                 <?php endif; ?>
