@@ -173,11 +173,11 @@ require_login();
                         </div>
                     </div>
 
-                    <!-- Most Targeted Ports -->
+                    <!-- Top Probed Services -->
                     <div class="col-lg-6">
                         <div class="card">
                             <div class="card-header">
-                                <h3 class="card-title">Most Targeted Ports</h3>
+                                <h3 class="card-title">Top Probed Services</h3>
                                 <div class="card-tools">
                                     <select id="ports-days" class="form-control form-control-sm d-inline-block" style="width:auto;">
                                         <option value="7" selected>7 Days</option>
@@ -473,20 +473,38 @@ function loadTargetedPorts() {
             if (portsChart) {
                 portsChart.destroy();
             }
-
-            portsChart = new Chart(ctx, {
-                type: 'pie',
+	    portsChart = new Chart(ctx, {
+                type: 'horizontalBar',
                 data: {
                     labels: labels,
                     datasets: [{
+                        label: 'Snares',
                         data: values,
                         backgroundColor: colors
                     }]
                 },
-                options: {
+		options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    legend: { position: 'right' }
+                    legend: { display: false },
+                    scales: {
+                        xAxes: [{
+                            type: 'logarithmic',
+                            gridLines: { display: false },
+                            ticks: {
+                                beginAtZero: false,
+                                callback: function(value) {
+                                    if ([1, 10, 100, 1000, 10000, 100000].includes(value)) {
+                                        return value.toLocaleString();
+                                    }
+                                    return '';
+                                }
+                            }
+                        }],
+                        yAxes: [{
+                            gridLines: { display: false }
+                        }]
+                    }
                 }
             });
         })
