@@ -448,9 +448,9 @@ function loadTargetedPorts() {
     fetch('../api/targeted-ports.php?days=' + days)
         .then(response => response.json())
         .then(data => {
-            const labels = data.map(p => p.port + (p.service !== 'Other' && p.service !== 'Others' ? ' (' + p.service + ')' : ''));
+	    const labels = data.map(p => p.port + ' (' + p.service + ')');
             const values = data.map(p => p.count);
-            const colors = [
+	    const colors = [
                 'rgb(255, 99, 132)',
                 'rgb(54, 162, 235)',
                 'rgb(255, 205, 86)',
@@ -458,9 +458,16 @@ function loadTargetedPorts() {
                 'rgb(153, 102, 255)',
                 'rgb(255, 159, 64)',
                 'rgb(201, 203, 207)',
-                'rgb(100, 149, 237)'
+                'rgb(100, 149, 237)',
+                'rgb(255, 140, 0)',
+                'rgb(46, 204, 113)',
+                'rgb(142, 68, 173)',
+                'rgb(241, 196, 15)',
+                'rgb(231, 76, 60)',
+                'rgb(26, 188, 156)',
+                'rgb(52, 73, 94)',
+                'rgb(149, 165, 166)'
             ];
-
             const ctx = document.getElementById('portsChart').getContext('2d');
 
             if (portsChart) {
