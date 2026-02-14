@@ -16,7 +16,7 @@ $is_admin = $user && $user['role'] === 'admin';
     </ul>
     <ul class="navbar-nav ml-auto">
         <?php if ($user): ?>
-	<li class="nav-item">
+        <li class="nav-item">
             <a href="profile.php" class="nav-link">
                 <i class="fas fa-user mr-1"></i><?php echo htmlspecialchars($user['username']); ?>
                 <span class="badge badge-<?php echo $is_admin ? 'danger' : 'info'; ?> ml-1"><?php echo htmlspecialchars($user['role']); ?></span>
@@ -30,11 +30,11 @@ $is_admin = $user && $user['role'] === 'admin';
         <?php endif; ?>
     </ul>
 </nav>
+
 <!-- Sidebar -->
 <aside class="main-sidebar sidebar-dark-primary elevation-4">
-    <a href="index.php" class="brand-link">
-        <i class="fas fa-database"></i>
-        <span class="brand-text font-weight-light ml-2">LURE Dashboard</span>
+    <a href="index.php" class="brand-link pl-3">
+        <span class="brand-text font-weight-light ml-2">LURE</span>
     </a>
     <div class="sidebar">
         <nav class="mt-2">
@@ -45,13 +45,14 @@ $is_admin = $user && $user['role'] === 'admin';
                         <p>Dashboard</p>
                     </a>
                 </li>
-		<li class="nav-item">
+                <li class="nav-item">
                     <a href="enrichment.php" class="nav-link <?php echo ($current_page == 'enrichment.php') ? 'active' : ''; ?>">
                         <i class="nav-icon fas fa-shield-alt"></i>
                         <p>Enrichment</p>
                     </a>
                 </li>
-		<?php if ($is_admin): ?>
+
+                <?php if ($is_admin): ?>
                 <li class="nav-header">ADMINISTRATION</li>
                 <li class="nav-item">
                     <a href="cast.php" class="nav-link <?php echo ($current_page == 'cast.php') ? 'active' : ''; ?>">
@@ -95,7 +96,7 @@ $is_admin = $user && $user['role'] === 'admin';
                         <p>SQL Query</p>
                     </a>
                 </li>
-		<li class="nav-item">
+                <li class="nav-item">
                     <a href="audit.php" class="nav-link <?php echo ($current_page == 'audit.php') ? 'active' : ''; ?>">
                         <i class="nav-icon fas fa-history"></i>
                         <p>Audit Log</p>
