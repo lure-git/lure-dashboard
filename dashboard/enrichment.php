@@ -237,7 +237,9 @@ const FEED_INFO = {
     'ipsum_level1':{desc:'IPsum — IPs seen on 1+ blocklists (broad coverage)',category:'Aggregated Intel',type:'IP'},
     'greensnow':{desc:'GreenSnow — scanning/attacking IPs (last 24h)',category:'Scanning / Attacks',type:'IP'},
     'bruteforceblocker':{desc:'BruteForceBlocker — SSH brute-force IPs',category:'SSH Brute-force',type:'IP'},
-    'binarydefense':{desc:'Binary Defense — threat intelligence IP banlist',category:'Threat Intel',type:'IP'}
+    'binarydefense':{desc:'Binary Defense — threat intelligence IP banlist',category:'Threat Intel',type:'IP'},
+    'dataplane_sshpwauth':{desc:'Dataplane.org — SSH password auth attackers',category:'SSH Brute-force',type:'IP'},
+    'dataplane_sshpwauth:{desc:'Dataplane.org — SSH password auth attackers',category:'SSH Brute-force',type:'IP'},
 };
 let distChart;
 
