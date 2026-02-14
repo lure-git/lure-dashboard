@@ -60,12 +60,6 @@ $is_admin = $user && $user['role'] === 'admin';
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a href="configuration.php" class="nav-link <?php echo ($current_page == 'configuration.php') ? 'active' : ''; ?>">
-                        <i class="nav-icon fas fa-cogs"></i>
-                        <p>Configuration</p>
-                    </a>
-                </li>
-                <li class="nav-item">
                     <a href="health.php" class="nav-link <?php echo ($current_page == 'health.php') ? 'active' : ''; ?>">
                         <i class="nav-icon fas fa-heartbeat"></i>
                         <p>Health</p>
@@ -75,6 +69,12 @@ $is_admin = $user && $user['role'] === 'admin';
                     <a href="lists.php" class="nav-link <?php echo ($current_page == 'lists.php') ? 'active' : ''; ?>">
                         <i class="nav-icon fas fa-list"></i>
                         <p>Lists</p>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="configuration.php" class="nav-link <?php echo ($current_page == 'configuration.php') ? 'active' : ''; ?>">
+                        <i class="nav-icon fas fa-cogs"></i>
+                        <p>Configuration</p>
                     </a>
                 </li>
                 <li class="nav-item">
