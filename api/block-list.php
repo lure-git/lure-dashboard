@@ -7,8 +7,8 @@ $db = getDB();
 $stmt = $db->query("
     SELECT 
         src_ip,
-        MIN(datetime(syslog_ts)) as first_seen,
-        MAX(datetime(syslog_ts)) as last_seen,
+        MIN(syslog_ts) as first_seen,
+        MAX(syslog_ts) as last_seen,
         COUNT(*) as attack_count,
         COUNT(DISTINCT dpt) as unique_ports,
         GROUP_CONCAT(DISTINCT dpt) as ports_targeted

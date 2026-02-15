@@ -66,8 +66,8 @@ if ($searchType === 'ip') {
     $stmt = $db->prepare("
         SELECT 
             src_ip,
-            MIN(datetime(syslog_ts)) as first_seen,
-            MAX(datetime(syslog_ts)) as last_seen,
+            MIN(syslog_ts) as first_seen,
+            MAX(syslog_ts) as last_seen,
             COUNT(*) as attack_count
         FROM lure_logs
         WHERE src_ip = ?
@@ -114,8 +114,8 @@ if ($searchType === 'ip') {
     $stmt = $db->prepare("
         SELECT 
             src_ip,
-            MIN(datetime(syslog_ts)) as first_seen,
-            MAX(datetime(syslog_ts)) as last_seen,
+            MIN(syslog_ts) as first_seen,
+            MAX(syslog_ts) as last_seen,
             COUNT(*) as attack_count
         FROM lure_logs
         GROUP BY src_ip
