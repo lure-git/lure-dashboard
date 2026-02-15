@@ -3,15 +3,25 @@ require_once 'config.php';
 $db = getDB();
 $stats = [];
 
-// Total snared — from summary table
-$result = $db->query("SELECT SUM(count) as count FROM daily_totals");
+$lastDate = $db->query("SELECT MAX(date) || 'T' as cutoff FROM daily_ip_stats")->fetch(PDO::FETCH_ASSOC)['cutoff'];
+
+$result = $db->prepare("
+    SELECT (SELECT SUM(count) FROM daily_totals) +
+           (SELECT COUNT(*) FROM lure_logs WHERE syslog_ts > :cutoff) as count
+");
+$result->execute([':cutoff' => $lastDate]);
 $stats['total_attacks'] = $result->fetch(PDO::FETCH_ASSOC)['count'];
 
-// Unique IPs — from summary table
-$result = $db->query("SELECT COUNT(DISTINCT src_ip) as count FROM daily_ip_stats");
+$result = $db->prepare("
+    SELECT COUNT(*) as count FROM (
+        SELECT DISTINCT src_ip FROM daily_ip_stats
+        UNION
+        SELECT DISTINCT src_ip FROM lure_logs WHERE syslog_ts > :cutoff
+    )
+");
+$result->execute([':cutoff' => $lastDate]);
 $stats['unique_ips'] = $result->fetch(PDO::FETCH_ASSOC)['count'];
 
-// Snared last 24h — still from raw table (fast, index-bounded)
 $result = $db->query("
     SELECT COUNT(*) as count
     FROM lure_logs
