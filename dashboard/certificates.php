@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             if ($return_code === 0) {
                 // Update cert_type to 'api' for manually issued certs
-                db_query("UPDATE certificates SET cert_type = 'api' WHERE common_name = :name AND cert_type IS NULL", [':name' => $name]);
+                // cert_type set by lure-cert issue (defaults to 'api')
                 audit_log('cert_issue', 'certificate', $name, null);
                 $message = "Certificate '$name' issued successfully";
             } else {
@@ -157,11 +157,11 @@ if (isset($_GET['download'])) {
 }
 
 // Fetch certificates by type
-$api_certificates = db_fetch_all("SELECT * FROM certificates WHERE (cert_type = 'api' OR cert_type IS NULL) AND common_name NOT LIKE 'Lure-%' ORDER BY id DESC");
+$api_certificates = db_fetch_all("SELECT * FROM certificates WHERE cert_type = 'api' OR cert_type IS NULL ORDER BY id DESC");
 $lure_certificates = db_fetch_all("SELECT c.*, h.status as lure_status, h.last_check as last_health_report 
                                    FROM certificates c 
                                    LEFT JOIN lure_health h ON c.common_name = h.hostname 
-                                   WHERE c.cert_type = 'lure' OR c.common_name LIKE 'Lure-%'
+                                   WHERE c.cert_type = 'lure'
                                    ORDER BY c.id DESC");
 
 // Count stats
