@@ -5,9 +5,9 @@ $db = getDB();
 
 $stmt = $db->query("
     SELECT 
-        proto as protocol,
-        SUM(count) as count
-    FROM daily_totals
+        UPPER(proto) as protocol,
+        COUNT(*) as count
+    FROM lure_logs
     GROUP BY proto
     ORDER BY count DESC
 ");

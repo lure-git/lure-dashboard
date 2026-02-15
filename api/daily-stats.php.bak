@@ -5,12 +5,16 @@ header('Content-Type: application/json');
 
 $db = getDB();
 
-// Get daily IP stats from summary table
+// Get daily stats
 $stmt = $db->query("
-    SELECT date, src_ip, SUM(count) as snared
-    FROM daily_ip_stats
-    GROUP BY date, src_ip
+    SELECT 
+        DATE(syslog_ts) as date,
+        src_ip,
+        COUNT(*) as snared
+    FROM lure_logs
+    GROUP BY DATE(syslog_ts), src_ip
 ");
+
 $rawData = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Get permit list for filtering
@@ -24,7 +28,7 @@ foreach ($permitList as $entry) {
     if (strpos($entry, '/') !== false) {
         $permitCIDRs[] = $entry;
     } else {
-        $permitIPs[$entry] = true;
+        $permitIPs[] = $entry;
     }
 }
 
@@ -36,7 +40,7 @@ foreach ($rawData as $row) {
     $date = $row['date'];
     
     // Skip if in exact permit list
-    if (isset($permitIPs[$srcIP])) {
+    if (in_array($srcIP, $permitIPs)) {
         continue;
     }
     
@@ -53,6 +57,7 @@ foreach ($rawData as $row) {
         continue;
     }
     
+    // Aggregate stats
     if (!isset($dailyStats[$date])) {
         $dailyStats[$date] = [
             'date' => $date,
@@ -75,12 +80,14 @@ foreach ($dailyStats as $date => $stats) {
     ];
 }
 
+// Sort by date descending
 usort($result, function($a, $b) {
     return strcmp($b['date'], $a['date']);
 });
 
 echo json_encode($result);
 
+// Helper function
 function ipInCidr($ip, $cidr) {
     list($subnet, $mask) = explode('/', $cidr);
     $ip_long = ip2long($ip);

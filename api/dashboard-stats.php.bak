@@ -3,15 +3,15 @@ require_once 'config.php';
 $db = getDB();
 $stats = [];
 
-// Total snared — from summary table
-$result = $db->query("SELECT SUM(count) as count FROM daily_totals");
+// Total snared (30D)
+$result = $db->query("SELECT COUNT(*) as count FROM lure_logs");
 $stats['total_attacks'] = $result->fetch(PDO::FETCH_ASSOC)['count'];
 
-// Unique IPs — from summary table
-$result = $db->query("SELECT COUNT(DISTINCT src_ip) as count FROM daily_ip_stats");
+// Unique IPs
+$result = $db->query("SELECT COUNT(DISTINCT src_ip) as count FROM lure_logs");
 $stats['unique_ips'] = $result->fetch(PDO::FETCH_ASSOC)['count'];
 
-// Snared last 24h — still from raw table (fast, index-bounded)
+// Snared last 24h
 $result = $db->query("
     SELECT COUNT(*) as count
     FROM lure_logs
