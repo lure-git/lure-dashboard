@@ -9,9 +9,11 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     
+    // === mTLS Certificate Actions ===
+    
     if ($action === 'issue') {
         $name = trim($_POST['name'] ?? '');
-        $name = preg_replace('/[^a-zA-Z0-9_-]/', '', $name); // Sanitize
+        $name = preg_replace('/[^a-zA-Z0-9_-]/', '', $name);
         
         if (empty($name)) {
             $error = 'Certificate name is required';
@@ -23,7 +25,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exec('sudo /usr/local/share/lure/cert-mgt/lure-cert issue ' . escapeshellarg($name) . ' 2>&1', $output, $return_code);
             
             if ($return_code === 0) {
-                // Update cert_type to 'api' for manually issued certs
                 // cert_type set by lure-cert issue (defaults to 'api')
                 audit_log('cert_issue', 'certificate', $name, null);
                 $message = "Certificate '$name' issued successfully";
@@ -79,9 +80,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+    
+    // === API Key Actions ===
+    
+    if ($action === 'create_apikey') {
+        $name = trim($_POST['name'] ?? '');
+        $name = preg_replace('/[^a-zA-Z0-9_-]/', '', $name);
+        $notes = trim($_POST['notes'] ?? '');
+        
+        if (empty($name) || strlen($name) < 3) {
+            $error = 'API key name must be at least 3 characters';
+        } else {
+            $api_key = bin2hex(random_bytes(32));
+            $user = current_user();
+            
+            try {
+                db_query(
+                    "INSERT INTO api_keys (name, api_key, created_by, notes) VALUES (:name, :key, :user, :notes)",
+                    [':name' => $name, ':key' => $api_key, ':user' => $user['username'], ':notes' => $notes]
+                );
+                exec('sudo /usr/local/share/lure/cert-mgt/refresh-api-keys.sh 2>&1');
+                audit_log('apikey_create', 'api_key', $name, null);
+                // Store the key in session flash so we can show it once
+                $_SESSION['new_api_key'] = $api_key;
+                $_SESSION['new_api_key_name'] = $name;
+                $message = "API key '$name' created. Copy the key below — it will not be shown again.";
+            } catch (Exception $e) {
+                $error = 'Failed to create API key: ' . $e->getMessage();
+            }
+        }
+    }
+    
+    if ($action === 'revoke_apikey') {
+        $id = (int)($_POST['id'] ?? 0);
+        
+        if ($id <= 0) {
+            $error = 'Invalid key ID';
+        } else {
+            $key = db_fetch_one("SELECT name FROM api_keys WHERE id = :id AND is_active = 1", [':id' => $id]);
+            if (!$key) {
+                $error = 'API key not found or already revoked';
+            } else {
+                db_query("UPDATE api_keys SET is_active = 0 WHERE id = :id", [':id' => $id]);
+                exec('sudo /usr/local/share/lure/cert-mgt/refresh-api-keys.sh 2>&1');
+                audit_log('apikey_revoke', 'api_key', $key['name'], null);
+                $message = "API key '{$key['name']}' revoked";
+            }
+        }
+    }
 }
 
-// Handle download
+// Handle certificate download
 if (isset($_GET['download'])) {
     $name = trim($_GET['download']);
     $name = preg_replace('/[^a-zA-Z0-9_-]/', '', $name);
@@ -164,11 +213,21 @@ $lure_certificates = db_fetch_all("SELECT c.*, h.status as lure_status, h.last_c
                                    WHERE c.cert_type = 'lure'
                                    ORDER BY c.id DESC");
 
+// Fetch API keys
+$api_keys = db_fetch_all("SELECT * FROM api_keys ORDER BY id DESC");
+
 // Count stats
 $total_api = count($api_certificates);
 $active_api = count(array_filter($api_certificates, fn($c) => $c['is_active']));
 $total_lure = count($lure_certificates);
 $active_lure = count(array_filter($lure_certificates, fn($c) => $c['is_active']));
+$total_apikeys = count($api_keys);
+$active_apikeys = count(array_filter($api_keys, fn($k) => $k['is_active']));
+
+// Check for flash API key (shown once after creation)
+$new_api_key = $_SESSION['new_api_key'] ?? null;
+$new_api_key_name = $_SESSION['new_api_key_name'] ?? null;
+unset($_SESSION['new_api_key'], $_SESSION['new_api_key_name']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -212,6 +271,26 @@ $active_lure = count(array_filter($lure_certificates, fn($c) => $c['is_active'])
                 </div>
                 <?php endif; ?>
 
+                <?php if ($new_api_key): ?>
+                <div class="alert alert-warning">
+                    <h5><i class="fas fa-key mr-2"></i>New API Key: <?php echo htmlspecialchars($new_api_key_name); ?></h5>
+                    <p class="mb-2">Copy this key now — it will not be shown again.</p>
+                    <div class="input-group" style="max-width: 600px;">
+                        <input type="text" class="form-control form-control-sm font-weight-bold" 
+                               id="newApiKey" value="<?php echo htmlspecialchars($new_api_key); ?>" readonly
+                               style="font-family: monospace; font-size: 0.85em;">
+                        <div class="input-group-append">
+                            <button class="btn btn-sm btn-outline-secondary" onclick="copyApiKey()">
+                                <i class="fas fa-copy"></i> Copy
+                            </button>
+                        </div>
+                    </div>
+                    <hr>
+                    <p class="mb-1"><strong>Usage:</strong></p>
+                    <code>curl -k -H "X-API-Key: <?php echo htmlspecialchars($new_api_key); ?>" https://&lt;em-lure&gt;:8443/api/feed/blocklist.txt</code>
+                </div>
+                <?php endif; ?>
+
                 <!-- Summary Cards -->
                 <div class="row">
                     <div class="col-lg-3 col-6">
@@ -219,6 +298,15 @@ $active_lure = count(array_filter($lure_certificates, fn($c) => $c['is_active'])
                             <div class="inner">
                                 <h3><?php echo $active_api; ?></h3>
                                 <p>Active API Certs</p>
+                            </div>
+                            <div class="icon"><i class="fas fa-lock"></i></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-3 col-6">
+                        <div class="small-box bg-olive">
+                            <div class="inner">
+                                <h3><?php echo $active_apikeys; ?></h3>
+                                <p>Active API Keys</p>
                             </div>
                             <div class="icon"><i class="fas fa-key"></i></div>
                         </div>
@@ -244,18 +332,9 @@ $active_lure = count(array_filter($lure_certificates, fn($c) => $c['is_active'])
                                 }
                                 ?>
                                 <h3><?php echo $expiring_soon; ?></h3>
-                                <p>Expiring Soon (&lt;30d)</p>
+                                <p>Certs Expiring (&lt;30d)</p>
                             </div>
                             <div class="icon"><i class="fas fa-clock"></i></div>
-                        </div>
-                    </div>
-                    <div class="col-lg-3 col-6">
-                        <div class="small-box bg-secondary">
-                            <div class="inner">
-                                <h3><?php echo ($total_api - $active_api) + ($total_lure - $active_lure); ?></h3>
-                                <p>Revoked</p>
-                            </div>
-                            <div class="icon"><i class="fas fa-ban"></i></div>
                         </div>
                     </div>
                 </div>
@@ -297,7 +376,7 @@ $active_lure = count(array_filter($lure_certificates, fn($c) => $c['is_active'])
                 <!-- API Certificates List -->
                 <div class="card">
                     <div class="card-header">
-                        <h3 class="card-title"><i class="fas fa-key mr-2"></i>API Client Certificates</h3>
+                        <h3 class="card-title"><i class="fas fa-lock mr-2"></i>API Client Certificates (mTLS)</h3>
                         <div class="card-tools">
                             <span class="badge badge-info"><?php echo $total_api; ?> total</span>
                         </div>
@@ -355,6 +434,113 @@ $active_lure = count(array_filter($lure_certificates, fn($c) => $c['is_active'])
                                               onsubmit="return confirm('Revoke certificate <?php echo htmlspecialchars($cert['common_name']); ?>?');">
                                             <input type="hidden" name="action" value="revoke">
                                             <input type="hidden" name="name" value="<?php echo htmlspecialchars($cert['common_name']); ?>">
+                                            <button type="submit" class="btn btn-xs btn-danger" title="Revoke">
+                                                <i class="fas fa-ban"></i>
+                                            </button>
+                                        </form>
+                                        <?php else: ?>
+                                        <span class="text-muted">-</span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- Create API Key Card -->
+                <div class="card card-olive">
+                    <div class="card-header">
+                        <h3 class="card-title"><i class="fas fa-plus-circle mr-2"></i>Create New API Key</h3>
+                        <div class="card-tools">
+                            <button type="button" class="btn btn-tool" data-card-widget="collapse"><i class="fas fa-minus"></i></button>
+                        </div>
+                    </div>
+                    <form method="post">
+                        <input type="hidden" name="action" value="create_apikey">
+                        <div class="card-body">
+                            <p class="text-muted small mb-3">
+                                <i class="fas fa-info-circle mr-1"></i>
+                                API keys authenticate blocklist EDL feed consumers on port 8443. Use for firewalls and integrations that cannot use mTLS client certificates.
+                            </p>
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label>Key Name</label>
+                                        <input type="text" name="name" class="form-control" 
+                                               pattern="[a-zA-Z0-9_-]+" 
+                                               title="Only letters, numbers, underscores and hyphens"
+                                               placeholder="e.g., paloalto-fw1, fortinet-prod" required>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label>Notes <small class="text-muted">(optional)</small></label>
+                                        <input type="text" name="notes" class="form-control" 
+                                               placeholder="e.g., Main firewall, Building A">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-footer">
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-key mr-2"></i>Create API Key
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- API Keys List -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title"><i class="fas fa-key mr-2"></i>API Keys (Blocklist EDL Feed)</h3>
+                        <div class="card-tools">
+                            <span class="badge badge-olive"><?php echo $active_apikeys; ?> active</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Endpoint: <code>https://&lt;em-lure&gt;:8443/api/feed/blocklist.txt</code> (plain text) or <code>blocklist.json</code> (JSON)
+                        </p>
+                        <?php if (empty($api_keys)): ?>
+                        <p class="text-muted text-center">No API keys created yet.</p>
+                        <?php else: ?>
+                        <table id="apiKeysTable" class="table table-bordered table-striped table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Key</th>
+                                    <th>Created</th>
+                                    <th>Created By</th>
+                                    <th>Notes</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($api_keys as $key): ?>
+                                <tr>
+                                    <td><strong><?php echo htmlspecialchars($key['name']); ?></strong></td>
+                                    <td><code style="font-size: 0.75em;"><?php echo htmlspecialchars(substr($key['api_key'], 0, 8)); ?>...<?php echo htmlspecialchars(substr($key['api_key'], -4)); ?></code></td>
+                                    <td><?php echo date('Y-m-d', strtotime($key['created_at'] ?? '')); ?></td>
+                                    <td><?php echo htmlspecialchars($key['created_by'] ?? '-'); ?></td>
+                                    <td><?php echo htmlspecialchars($key['notes'] ?? '-'); ?></td>
+                                    <td>
+                                        <?php if ($key['is_active']): ?>
+                                        <span class="badge badge-success">Active</span>
+                                        <?php else: ?>
+                                        <span class="badge badge-danger">Revoked</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($key['is_active']): ?>
+                                        <form method="post" style="display:inline;" 
+                                              onsubmit="return confirm('Revoke API key <?php echo htmlspecialchars($key['name']); ?>? Consumers using this key will lose access immediately.');">
+                                            <input type="hidden" name="action" value="revoke_apikey">
+                                            <input type="hidden" name="id" value="<?php echo $key['id']; ?>">
                                             <button type="submit" class="btn btn-xs btn-danger" title="Revoke">
                                                 <i class="fas fa-ban"></i>
                                             </button>
@@ -500,7 +686,7 @@ $active_lure = count(array_filter($lure_certificates, fn($c) => $c['is_active'])
                         </div>
                     </div>
                     <div class="card-body">
-                        <h5>API Client Certificates</h5>
+                        <h5>API Client Certificates (mTLS)</h5>
                         <p>After downloading a certificate bundle, clients can authenticate to the API using mTLS:</p>
                         
                         <h6>curl</h6>
@@ -509,6 +695,30 @@ $active_lure = count(array_filter($lure_certificates, fn($c) => $c['is_active'])
                         <h6>Python</h6>
                         <pre><code>import requests
 response = requests.get(url, cert=('client.crt', 'client.key'), verify='ca.crt')</code></pre>
+                        
+                        <hr>
+                        
+                        <h5>API Keys (Blocklist EDL Feed)</h5>
+                        <p>API keys authenticate blocklist consumers on port 8443. Two formats are available:</p>
+                        
+                        <h6>Plain text (one IP per line — for Palo Alto EDL, Fortinet, etc.)</h6>
+                        <pre><code>curl -k -H "X-API-Key: YOUR_KEY" https://&lt;em-lure&gt;:8443/api/feed/blocklist.txt</code></pre>
+                        
+                        <h6>JSON (structured data with metadata)</h6>
+                        <pre><code>curl -k -H "X-API-Key: YOUR_KEY" https://&lt;em-lure&gt;:8443/api/feed/blocklist.json</code></pre>
+                        
+                        <h6>Palo Alto EDL Configuration</h6>
+                        <pre><code>Type: IP List
+Source: https://&lt;em-lure&gt;:8443/api/feed/blocklist.txt
+Certificate Profile: (none required)
+Custom Header: X-API-Key: YOUR_KEY
+Refresh Rate: 5 minutes</code></pre>
+
+                        <h6>Fortinet External Block List</h6>
+                        <pre><code>Type: IP Address
+URI: https://&lt;em-lure&gt;:8443/api/feed/blocklist.txt
+HTTP Header: X-API-Key: YOUR_KEY
+Refresh Rate: 5 minutes</code></pre>
                         
                         <hr>
                         
@@ -550,6 +760,17 @@ $(function() {
         "pageLength": 10
     });
     
+    $('#apiKeysTable').DataTable({
+        "paging": true,
+        "lengthChange": false,
+        "searching": true,
+        "ordering": true,
+        "order": [[2, "desc"]],
+        "info": false,
+        "autoWidth": false,
+        "pageLength": 10
+    });
+    
     $('#lureCertsTable').DataTable({
         "paging": true,
         "lengthChange": false,
@@ -561,6 +782,15 @@ $(function() {
         "pageLength": 10
     });
 });
+
+function copyApiKey() {
+    var input = document.getElementById('newApiKey');
+    input.select();
+    document.execCommand('copy');
+    var btn = event.target.closest('button');
+    btn.innerHTML = '<i class="fas fa-check"></i> Copied';
+    setTimeout(function() { btn.innerHTML = '<i class="fas fa-copy"></i> Copy'; }, 2000);
+}
 </script>
 </body>
 </html>
