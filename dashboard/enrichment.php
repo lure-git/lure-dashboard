@@ -129,7 +129,7 @@ require_login();
         <div class="col-lg-3 col-6"><div class="small-box bg-secondary"><div class="inner"><h3 style="font-size:1.3rem;">2x Daily</h3><p>Update Frequency</p></div><div class="icon"><i class="fas fa-clock"></i></div></div></div>
     </div>
     <div class="row"><div class="col-12"><div class="card card-outline card-success">
-        <div class="card-header"><h3 class="card-title"><i class="fas fa-shield-alt mr-2"></i>LURE Unique Detection</h3></div>
+        <div class="card-header"><h3 class="card-title"><i class="fas fa-search-plus mr-2"></i>LURE Unique Detection</h3></div>
         <div class="card-body">
             <div class="row align-items-center">
                 <div class="col-md-4 text-center">
