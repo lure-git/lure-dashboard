@@ -83,22 +83,6 @@ foreach ($all_ports as $port) {
         $port['service'] = $label;
         $result[] = $port;
         $shown++;
-    } else {
-        $others_count += (int)$port['count'];
-    }
-}
-
-$result = [];
-$shown = 0;
-
-foreach ($all_ports as $port) {
-    $p = (int)$port['port'];
-    $label = $services[$p] ?? null;
-
-    if ($shown < 15 && $label !== null) {
-        $port['service'] = $label;
-        $result[] = $port;
-        $shown++;
     }
 }
 
