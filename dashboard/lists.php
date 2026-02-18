@@ -128,15 +128,14 @@ require_login();
                                 <p class="text-muted">Export blocked IP addresses for use in firewalls, IDS/IPS, or other security tools.</p>
                                 <p class="text-muted"><small>Automatically excludes all IPs and ranges from the Permit List</small></p>
                                 <div class="mt-4">
-                                    <button class="btn btn-primary btn-lg mr-3" onclick="downloadBlocklistTxt()">
+                                    <!-- Direct link to static cache file -->
+                                    <a href="../api/cache/blocklist.txt" download class="btn btn-primary btn-lg">
                                         <i class="fas fa-download"></i> Download .TXT
-                                    </button>
-                                    <button class="btn btn-info btn-lg" onclick="downloadBlocklistCsv()">
-                                        <i class="fas fa-file-csv"></i> Detailed .CSV
-                                    </button>
+                                    </a>
                                 </div>
                                 <div class="mt-4">
                                     <p id="blocklist-count" class="text-muted"><small>Loading count...</small></p>
+                                    <p id="blocklist-updated" class="text-muted"><small></small></p>
                                 </div>
                             </div>
                         </div>
@@ -220,32 +219,6 @@ function loadPermitList() {
         .catch(error => console.error('Error loading permit list:', error));
 }
 
-// Load block list
-function loadBlockList() {
-    fetch('../api/block-list.php?limit=100')
-        .then(response => response.json())
-        .then(data => {
-            const tbody = document.getElementById('block-list-table');
-            tbody.innerHTML = '';
-            
-            if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No blocked IPs</td></tr>';
-                return;
-            }
-            
-            data.forEach(entry => {
-                const row = tbody.insertRow();
-                const date = new Date(entry.last_seen);
-                row.innerHTML = `
-                    <td><code>${entry.src_ip}</code></td>
-                    <td><span class="badge badge-danger">${entry.attack_count}</span></td>
-                    <td><small>${date.toLocaleString()}</small></td>
-                `;
-            });
-        })
-        .catch(error => console.error('Error loading block list:', error));
-}
-
 // Show add modal
 function showAddModal() {
     document.getElementById('add-entry').value = '';
@@ -279,7 +252,7 @@ function addPermitEntry() {
         } else {
             $('#addModal').modal('hide');
             loadPermitList();
-            loadBlockList(); // Refresh block list as it may change
+            loadBlocklistCount(); // Refresh count
         }
     })
     .catch(error => {
@@ -301,7 +274,7 @@ function deletePermitEntry(id) {
     .then(data => {
         if (data.success) {
             loadPermitList();
-            loadBlockList();
+            loadBlocklistCount();
         } else {
             alert('Error: ' + (data.error || 'Unknown error'));
         }
@@ -396,59 +369,22 @@ function searchIP() {
         });
 }
 
-// Download block list as CSV
-// Download blocklist as plain text (just IPs)
-function downloadBlocklistTxt() {
-    fetch('../api/block-list.php')
-        .then(response => response.json())
-        .then(data => {
-            let txt = data.map(entry => entry.src_ip).join('\n');
-            
-            const blob = new Blob([txt], { type: 'text/plain' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `blocklist-${new Date().toISOString().split('T')[0]}.txt`;
-            a.click();
-            window.URL.revokeObjectURL(url);
-        })
-        .catch(error => alert('Download failed'));
-}
-
-// Download detailed blocklist as CSV
-function downloadBlocklistCsv() {
-    fetch('../api/block-list.php')
-        .then(response => response.json())
-        .then(data => {
-            let csv = 'IP Address,Snared Count,First Seen,Last Seen,Unique Port Count\n';
-            data.forEach(entry => {
-                csv += `${entry.src_ip},${entry.attack_count},${entry.first_seen},${entry.last_seen},${entry.unique_ports}\n`;
-            });
-            
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `blocklist-detailed-${new Date().toISOString().split('T')[0]}.csv`;
-            a.click();
-            window.URL.revokeObjectURL(url);
-        })
-        .catch(error => alert('Download failed'));
-}
-
-// Load blocklist count
+// Load blocklist count from static cache file (fast!)
 function loadBlocklistCount() {
-    fetch('../api/block-list.php')
+    fetch('../api/cache/blocklist.json')
         .then(response => response.json())
         .then(data => {
             document.getElementById('blocklist-count').innerHTML = 
-                `<small><i class="fas fa-ban text-danger"></i> <strong>${data.length}</strong> block listed IP addresses</small>`;
+                `<small><i class="fas fa-ban text-danger"></i> <strong>${data.blocked_count.toLocaleString()}</strong> blocked IP addresses</small>`;
+            document.getElementById('blocklist-updated').innerHTML = 
+                `<small class="text-muted">Last updated: ${data.updated_at}</small>`;
         })
         .catch(error => {
             document.getElementById('blocklist-count').innerHTML = 
                 '<small class="text-danger">Error loading count</small>';
         });
 }
+
 // Initial load
 loadPermitList();
 loadBlocklistCount();

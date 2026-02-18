@@ -156,7 +156,7 @@ require_login();
     <div class="row"><div class="col-12"><div class="card">
         <div class="card-header"><h3 class="card-title"><i class="fas fa-rss mr-2"></i>Threat Intelligence Feeds</h3></div>
         <div class="card-body p-0"><table class="table table-striped mb-0"><thead><tr><th>Feed</th><th>Description</th><th>Category</th><th class="text-right">Entries</th><th>Last Changed</th><th>Status</th></tr></thead><tbody id="feeds-table"></tbody></table></div>
-        <div class="card-footer text-muted"><small><strong>Last published:</strong> <span id="feed-last-published">--</span> &nbsp;|&nbsp; <strong>Last synced:</strong> <span id="feed-last-synced">--</span> &nbsp;|&nbsp; Feeds are updated at 02:00 and 14:00 UTC, enrichment runs at 04:00 and 16:00 UTC.</small></div>
+        <div class="card-footer text-muted"><small><strong>Last published:</strong> <span id="feed-last-published">--</span> &nbsp;|&nbsp; <strong>Last synced:</strong> <span id="feed-last-synced">--</span> &nbsp;|&nbsp; Feeds are updated at 02:00 and 14:00 UTC, enrichment runs every 15 minutes.</small></div>
     </div></div></div>
     <div class="row"><div class="col-12"><div class="callout callout-info">
         <h5><i class="fas fa-info-circle mr-2"></i>About Threat Feeds</h5>
@@ -184,7 +184,7 @@ require_login();
     <div class="row"><div class="col-12"><div class="callout callout-info">
         <h5><i class="fas fa-info-circle mr-2"></i>About GeoIP Data</h5>
         <p>GeoIP enrichment uses the <strong>DB-IP Lite</strong> databases (Country + ASN), updated monthly. Each IP is resolved during the enrichment run using memory-mapped .mmdb files with negligible performance impact.</p>
-        <p class="mb-0">GeoIP data is <strong>informational only</strong> and does not affect the confidence score. Country and ASN information supports investigation and threat attribution, not blocking decisions. GeoIP databases are refreshed on the 1st of each month; enrichment runs apply the latest data twice daily at 04:05 and 16:05 UTC.</p>
+        <p class="mb-0">GeoIP data is <strong>informational only</strong> and does not affect the confidence score. Country and ASN information supports investigation and threat attribution, not blocking decisions.</p>
         <p><small>Last enriched: <span id="geo-last-enriched">--</span> &nbsp;|&nbsp; <a href="https://db-ip.com" target="_blank">IP Geolocation by DB-IP</a></small></p>
     </div></div></div>
 </div>
@@ -195,7 +195,7 @@ require_login();
         <div class="col-lg-8"><div class="card"><div class="card-header"><h3 class="card-title"><i class="fas fa-calculator mr-2"></i>Confidence Scoring Model v3.0</h3></div><div class="card-body">
             <p>Every IP that hits a LURE bait interface is scored with a <strong>confidence percentage (30–99%)</strong> answering: <em>"How confident are we that this IP is intentionally malicious?"</em></p>
             <p>The score is <strong>not a blocking decision</strong> — every IP that touches a bait interface should be blocked. The confidence percentage is for <strong>intelligence prioritization</strong>: investigation and dashboard visibility.</p>
-            <p>Scores are computed <strong>twice daily</strong> at 04:05 and 16:05 UTC.</p><hr>
+            <p>Scores are computed <strong>every 15 minutes</strong> via smart incremental enrichment.</p><hr>
             <div class="scoring-signal"><h6><i class="fas fa-crosshairs mr-1"></i> Base (Bait Hit) — <strong>30%</strong></h6><small class="text-muted">Every IP starts at 30%. There is no legitimate traffic on bait interfaces. A single hit could be a misconfigured device, so evidence must accumulate.</small></div>
             <div class="scoring-signal" style="border-left-color:#28a745;"><h6><i class="fas fa-calendar-check mr-1"></i> Persistence — <strong>+15% to +25%</strong></h6><small class="text-muted">The strongest behavioral signal. An IP returning day after day demonstrates clear intent.</small><table class="table table-sm mt-2 mb-0" style="max-width:300px;"><tr><td>2–3 days</td><td class="text-right">+15%</td></tr><tr><td>4–7 days</td><td class="text-right">+20%</td></tr><tr><td>8–14 days</td><td class="text-right">+23%</td></tr><tr><td>15+ days</td><td class="text-right">+25%</td></tr></table></div>
             <div class="scoring-signal" style="border-left-color:#fd7e14;"><h6><i class="fas fa-satellite-dish mr-1"></i> Sensor Coverage — <strong>+2% to +20%</strong></h6><small class="text-muted">Based on percentage of total deployed sensors hit. Scales automatically to any deployment size.</small><table class="table table-sm mt-2 mb-0" style="max-width:300px;"><tr><td>&gt;1 sensor</td><td class="text-right">+2%</td></tr><tr><td>10–19%</td><td class="text-right">+5%</td></tr><tr><td>20–39%</td><td class="text-right">+8%</td></tr><tr><td>40–59%</td><td class="text-right">+12%</td></tr><tr><td>60–79%</td><td class="text-right">+16%</td></tr><tr><td>80–100%</td><td class="text-right">+20%</td></tr></table></div>
@@ -212,6 +212,19 @@ require_login();
                 <tr><td><span style="color:#17a2b8;font-weight:600;">Low Confidence</span></td><td>35–49%</td><td><small>Some evidence beyond initial contact</small></td></tr>
                 <tr><td><span style="color:#6c757d;font-weight:600;">Suspected</span></td><td>30–34%</td><td><small>Single sensor hit, minimal evidence</small></td></tr>
             </tbody></table></div></div>
+            <!-- Traffic by Confidence Card -->
+            <div class="card card-outline card-info"><div class="card-header"><h3 class="card-title"><i class="fas fa-chart-bar mr-2"></i>Traffic by Confidence</h3></div>
+                <div class="card-body p-0">
+                    <table class="table table-sm table-striped mb-0">
+                        <thead><tr><th>Confidence</th><th class="text-right">Logs</th><th class="text-right">%</th></tr></thead>
+                        <tbody id="traffic-dist-body"><tr><td colspan="3" class="text-center text-muted"><i class="fas fa-spinner fa-spin"></i> Loading...</td></tr></tbody>
+                    </table>
+                </div>
+                <div class="card-footer text-center py-2">
+                    <span class="h4 text-success mb-0" id="non-suspected-pct">--</span>
+                    <span class="text-muted ml-1">of traffic is non-Suspected</span>
+                </div>
+            </div>
             <div class="card"><div class="card-header"><h3 class="card-title"><i class="fas fa-flask mr-2"></i>Scoring Examples</h3></div><div class="card-body p-0"><table class="table table-sm mb-0"><thead><tr><th>Scenario</th><th>Score</th></tr></thead><tbody>
                 <tr><td><small>1 sensor, 1 port, 1 day, 1 snare</small></td><td><span class="badge" style="background:#6c757d;color:#fff;">30%</span></td></tr>
                 <tr><td><small>1 sensor, 1 port, 2 days, 10 snares</small></td><td><span class="badge" style="background:#ffc107;color:#fff;">50%</span></td></tr>
@@ -223,7 +236,7 @@ require_login();
                 <li><small>LURE data is primary; feeds are supporting</small></li>
                 <li><small>Sensor coverage uses percentages, not raw counts</small></li>
                 <li><small>GeoIP is informational — does not affect scoring</small></li>
-                <li><small>Scoring is batch (twice daily), not inline</small></li>
+                <li><small>Scoring runs every 15 minutes (incremental)</small></li>
             </ul></div>
         </div>
     </div>
@@ -345,7 +358,6 @@ function lookupIP(){
 document.getElementById('ip-search').addEventListener('keypress',function(e){if(e.key==='Enter')lookupIP();});
 
 function loadFeeds(){
-    // Populate LURE Unique Detection card
     fetch('../api/confidence.php?action=summary').then(r=>r.json()).then(data=>{
         const total=data.totals.total_ips||0;
         const novel=data.totals.novel_count||0;
@@ -380,31 +392,43 @@ function loadFeeds(){
             tbody.appendChild(row);
         });
     });
-    // Load feed matches chart
     fetch('../api/confidence.php?action=feed_matches').then(r=>r.json()).then(data=>{
         const matches=data.matches||[];
         const ctx=document.getElementById('feedMatchChart').getContext('2d');
         if(window.feedMatchChartInstance) window.feedMatchChartInstance.destroy();
         window.feedMatchChartInstance=new Chart(ctx,{
             type:'horizontalBar',
-            data:{
-                labels:matches.map(m=>m.feed),
-                datasets:[{
-                    label:'LURE Matches',
-                    data:matches.map(m=>m.match_count),
-                    backgroundColor:'rgba(40,167,69,0.7)',
-                    borderColor:'rgba(40,167,69,1)',
-                    borderWidth:1
-                }]
-            },
-            options:{
-                responsive:true,
-                maintainAspectRatio:false,
-                legend:{display:false},
-                tooltips:{callbacks:{label:function(item,chartData){return Number(item.xLabel).toLocaleString()+' IPs (of '+data.total_scored.toLocaleString()+' scored)';}}},
-                scales:{xAxes:[{scaleLabel:{display:true,labelString:'Snared IPs Corroborated'},ticks:{beginAtZero:true,callback:function(v){return v.toLocaleString();}}}],yAxes:[{ticks:{fontSize:11}}]}
-            }
+            data:{labels:matches.map(m=>m.feed),datasets:[{label:'LURE Matches',data:matches.map(m=>m.match_count),backgroundColor:'rgba(40,167,69,0.7)',borderColor:'rgba(40,167,69,1)',borderWidth:1}]},
+            options:{responsive:true,maintainAspectRatio:false,legend:{display:false},tooltips:{callbacks:{label:function(item,chartData){return Number(item.xLabel).toLocaleString()+' IPs (of '+data.total_scored.toLocaleString()+' scored)';}}},scales:{xAxes:[{scaleLabel:{display:true,labelString:'Snared IPs Corroborated'},ticks:{beginAtZero:true,callback:function(v){return v.toLocaleString();}}}],yAxes:[{ticks:{fontSize:11}}]}}
         });
+    });
+}
+
+function loadTrafficDistribution(){
+    fetch('../api/confidence.php?action=traffic_distribution').then(r=>r.json()).then(data=>{
+        const tbody=document.getElementById('traffic-dist-body');
+        const footer=document.getElementById('non-suspected-pct');
+        if(!data.distribution||data.distribution.length===0){
+            tbody.innerHTML='<tr><td colspan="3" class="text-center text-muted">No data</td></tr>';
+            footer.textContent='--';
+            return;
+        }
+        const colors={'Confirmed':'danger','High Confidence':'warning','Moderate Confidence':'info','Low Confidence':'secondary','Suspected':'light'};
+        let html='';
+        data.distribution.forEach(d=>{
+            const badge=colors[d.label]||'secondary';
+            const textClass=d.label==='Suspected'?'text-dark':'';
+            html+=`<tr><td><span class="badge badge-${badge} ${textClass}">${d.label}</span></td><td class="text-right">${d.logs.toLocaleString()}</td><td class="text-right">${d.pct}%</td></tr>`;
+        });
+        if(data.unscored_logs>0){
+            const pct=((data.unscored_logs/data.total_logs)*100).toFixed(2);
+            html+=`<tr class="text-muted"><td><em>Unscored</em></td><td class="text-right">${data.unscored_logs.toLocaleString()}</td><td class="text-right">${pct}%</td></tr>`;
+        }
+        tbody.innerHTML=html;
+        footer.textContent=data.non_suspected_pct+'%';
+    }).catch(err=>{
+        console.error('Traffic distribution error:',err);
+        document.getElementById('traffic-dist-body').innerHTML='<tr><td colspan="3" class="text-center text-danger">Error loading</td></tr>';
     });
 }
 
@@ -437,10 +461,10 @@ $('#enrichmentTabs a[data-toggle="tab"]').on('shown.bs.tab',function(e){
     const target=$(e.target).attr('href');
     if(target==='#tab-feeds') loadFeeds();
     if(target==='#tab-geo') loadGeo();
+    if(target==='#tab-scoring') loadTrafficDistribution();
 });
 
 loadSummary();loadTop();
-// Fetch feed count for dynamic references across tabs
 fetch('../api/confidence.php?action=feeds').then(r=>r.json()).then(data=>{
     const count=Object.keys(data.feeds||{}).length;
     document.querySelectorAll('#feed-callout-count, #scoring-feed-count').forEach(el=>{el.textContent=count;});

@@ -7,14 +7,12 @@ if (!in_array($days, [7, 14, 21, 30])) {
     $days = 7;
 }
 
+// Use pre-aggregated daily_totals instead of scanning raw lure_logs
 $stmt = $db->prepare("
-    SELECT
-        substr(syslog_ts, 1, 10) as date,
-        proto,
-        COUNT(*) as count
-    FROM lure_logs
-    WHERE syslog_ts > strftime('%Y-%m-%dT%H:%M:%S', 'now', '-' || :days || ' days')
-    GROUP BY substr(syslog_ts, 1, 10), proto
+    SELECT date, proto, SUM(count) as count
+    FROM daily_totals
+    WHERE date >= date('now', '-' || :days || ' days')
+    GROUP BY date, proto
     ORDER BY date ASC, proto
 ");
 $stmt->bindValue(':days', $days, PDO::PARAM_INT);

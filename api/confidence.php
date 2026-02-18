@@ -3,10 +3,14 @@
  * LURE Enrichment / Confidence API
  * 
  * Endpoints:
- *   ?action=summary     — Confidence distribution overview
- *   ?action=lookup&ip=X — Full scoring breakdown for a single IP
- *   ?action=top&limit=N — Top N IPs by confidence
- *   ?action=search&q=X  — Search IPs by prefix or label
+ *   ?action=summary              — Confidence distribution overview
+ *   ?action=lookup&ip=X          — Full scoring breakdown for a single IP
+ *   ?action=top&limit=N          — Top N IPs by confidence
+ *   ?action=search&q=X           — Search IPs by prefix or label
+ *   ?action=feeds                — Feed manifest with staleness data
+ *   ?action=feed_matches         — Per-feed match counts
+ *   ?action=geo_stats            — GeoIP overview
+ *   ?action=traffic_distribution — Traffic volume by confidence level
  */
 
 require_once 'config.php';
@@ -14,6 +18,7 @@ require_once 'config.php';
 header('Content-Type: application/json');
 
 define('ENRICHMENT_DB', '/var/log/lures/enrichment.db');
+define('LURE_LOGS_DB', '/var/log/lures/lure_logs.db');
 
 function getEnrichmentDB() {
     if (!file_exists(ENRICHMENT_DB)) {
@@ -353,8 +358,81 @@ switch ($action) {
         ]);
         break;
 
+    case 'traffic_distribution':
+        // Get traffic volume breakdown by confidence label
+        // This shows what % of actual log traffic comes from each confidence tier
+        
+        try {
+            $logsDb = new PDO('sqlite:' . LURE_LOGS_DB);
+            $logsDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            
+            // Get total log count
+            $totalLogs = (int)$logsDb->query("SELECT COUNT(*) FROM lure_logs")->fetchColumn();
+            
+            if ($totalLogs === 0) {
+                echo json_encode([
+                    'total_logs' => 0,
+                    'scored_logs' => 0,
+                    'unscored_logs' => 0,
+                    'non_suspected_pct' => 0,
+                    'distribution' => []
+                ]);
+                break;
+            }
+            
+            // Attach enrichment DB and get breakdown by confidence label
+            $logsDb->exec("ATTACH '" . ENRICHMENT_DB . "' AS enrich");
+            
+            $stmt = $logsDb->query("
+                SELECT 
+                    e.confidence_label,
+                    MIN(e.confidence_pct) as min_pct,
+                    COUNT(*) as logs
+                FROM lure_logs l
+                JOIN enrich.enrichment_results e ON l.src_ip = e.ip
+                GROUP BY e.confidence_label
+                ORDER BY MIN(e.confidence_pct) DESC
+            ");
+            
+            $distribution = [];
+            $scoredTotal = 0;
+            $nonSuspectedLogs = 0;
+            
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $logs = (int)$row['logs'];
+                $pct = round(($logs / $totalLogs) * 100, 2);
+                
+                $distribution[] = [
+                    'label' => $row['confidence_label'],
+                    'logs' => $logs,
+                    'pct' => $pct
+                ];
+                
+                $scoredTotal += $logs;
+                
+                if ($row['confidence_label'] !== 'Suspected') {
+                    $nonSuspectedLogs += $logs;
+                }
+            }
+            
+            $nonSuspectedPct = $totalLogs > 0 ? round(($nonSuspectedLogs / $totalLogs) * 100, 2) : 0;
+            
+            echo json_encode([
+                'total_logs' => $totalLogs,
+                'scored_logs' => $scoredTotal,
+                'unscored_logs' => $totalLogs - $scoredTotal,
+                'non_suspected_pct' => $nonSuspectedPct,
+                'distribution' => $distribution
+            ]);
+            
+        } catch (PDOException $e) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Database query failed: ' . $e->getMessage()]);
+        }
+        break;
+
     default:
         http_response_code(400);
-        echo json_encode(['error' => 'Unknown action. Use: summary, lookup, top, search']);
+        echo json_encode(['error' => 'Unknown action. Use: summary, lookup, top, search, feeds, feed_matches, geo_stats, traffic_distribution']);
 }
 ?>
